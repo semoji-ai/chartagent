@@ -1,0 +1,26 @@
+{
+  "task_id": "smoke-ranking",
+  "goal": "show ranking",
+  "question": "어떤 채널이 가장 큰가?",
+  "dataset": {
+    "title": "성장 채널 전망 점수",
+    "unit": "pt",
+    "items": [
+      {
+        "label": "Organic SEO",
+        "value": 420
+      },
+      {
+        "label": "Influencers",
+        "value": 270
+      },
+      {
+        "label": "Newsletters",
+        "value": 180
+      }
+    ]
+  },
+  "source_hints": [
+    "Smoke example"
+  ]
+}

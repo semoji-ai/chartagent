@@ -1,0 +1,73 @@
+{
+  "source_repo": "https://github.com/VoltAgent/awesome-design-md",
+  "updated": "2026-04-07",
+  "theme_set_candidates": {
+    "neutral_white": {
+      "source_refs": ["vercel", "apple", "notion"],
+      "surface_tone": "clean_light_minimal",
+      "contrast_strategy": "high_clarity_low_noise",
+      "density_preference": "sparse",
+      "radius_preference": "subtle",
+      "annotation_style": "quiet_label",
+      "source_style": "quiet_footnote"
+    },
+    "editorial_outline": {
+      "source_refs": ["notion", "claude"],
+      "surface_tone": "warm_editorial_paper",
+      "contrast_strategy": "soft_reading_contrast",
+      "density_preference": "balanced",
+      "radius_preference": "comfortable",
+      "annotation_style": "soft_note",
+      "source_style": "calm_footnote"
+    },
+    "broadcast_signal": {
+      "source_refs": ["clickhouse", "vercel"],
+      "surface_tone": "dark_signal_panel",
+      "contrast_strategy": "high_contrast_accent",
+      "density_preference": "balanced_dense",
+      "radius_preference": "sharp_to_subtle",
+      "annotation_style": "signal_tag",
+      "source_style": "edge_rail"
+    },
+    "dashboard_analytical": {
+      "source_refs": ["coinbase", "clickhouse"],
+      "surface_tone": "institutional_panel_system",
+      "contrast_strategy": "clean_analytical_clarity",
+      "density_preference": "balanced_dense",
+      "radius_preference": "controlled",
+      "annotation_style": "compact_chip",
+      "source_style": "technical_footer"
+    },
+    "gallery_infographic": {
+      "source_refs": ["pinterest", "claude"],
+      "surface_tone": "warm_illustrative_gallery",
+      "contrast_strategy": "friendly_accent_contrast",
+      "density_preference": "balanced",
+      "radius_preference": "rounded",
+      "annotation_style": "friendly_chip",
+      "source_style": "soft_caption"
+    },
+    "market_technical": {
+      "source_refs": ["clickhouse", "coinbase", "vercel"],
+      "surface_tone": "technical_precision_panel",
+      "contrast_strategy": "functional_data_contrast",
+      "density_preference": "dense",
+      "radius_preference": "tight",
+      "annotation_style": "minimal_signal",
+      "source_style": "technical_rail"
+    }
+  },
+  "extractable_fields": [
+    "surface_tone",
+    "accent_role",
+    "border_philosophy",
+    "shadow_philosophy",
+    "typography_hierarchy",
+    "chart_family_preference",
+    "table_rhythm",
+    "source_style",
+    "annotation_style",
+    "density_preference",
+    "radius_preference"
+  ]
+}

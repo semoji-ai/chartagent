@@ -1,0 +1,48 @@
+{
+  "dashboard": "/Users/jleavens_macmini/Projects/chartagent/examples/chartagent_dashboard/index.html",
+  "theme_gallery": "/Users/jleavens_macmini/Projects/chartagent/examples/chartagent_dashboard/theme_gallery.html",
+  "case_count": 33,
+  "families": {
+    "bar_horizontal": 6,
+    "bar": 9,
+    "stacked_progress": 2,
+    "line": 2,
+    "donut": 1,
+    "pie": 1,
+    "percentage_progress": 1,
+    "radial_gauge": 1,
+    "semi_donut": 1,
+    "distribution_histogram": 1,
+    "stock_candlestick": 1,
+    "metric_wall": 1,
+    "comparison_table": 1,
+    "fact_table": 1,
+    "timeline_table": 1,
+    "annotated_chart": 3
+  },
+  "theme_sets": {
+    "neutral_white": 13,
+    "editorial_outline": 4,
+    "broadcast_signal": 3,
+    "dashboard_analytical": 9,
+    "gallery_infographic": 2,
+    "market_technical": 2
+  },
+  "warning_count": 7,
+  "cases_dir": "/Users/jleavens_macmini/Projects/chartagent/examples/chartagent_dashboard/cases",
+  "theme_gallery_case_count": 147,
+  "theme_gallery_themes": [
+    "neutral_white",
+    "editorial_outline",
+    "broadcast_signal",
+    "dashboard_analytical",
+    "gallery_infographic",
+    "poster_editorial",
+    "market_technical"
+  ],
+  "theme_gallery_variants": [
+    "base",
+    "signal",
+    "rounded"
+  ]
+}
