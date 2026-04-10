@@ -26,7 +26,9 @@ def _simplify_label_value_dataset(
         }
         for record in records_in
     ]
-    records.sort(key=lambda item: float(item.get("value") or 0.0), reverse=True)
+    preserve_order = bool((task.get("constraints") or {}).get("preserve_order", False))
+    if not preserve_order:
+        records.sort(key=lambda item: float(item.get("value") or 0.0), reverse=True)
 
     issues: list[dict[str, str]] = []
     max_categories = int(task.get("fallback_policy", {}).get("max_categories", 8) or 8)

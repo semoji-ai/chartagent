@@ -189,9 +189,8 @@ def _build_title(task: dict[str, Any], dataset: dict[str, Any], chart_family: st
 
 
 def _build_subtitle(dataset: dict[str, Any]) -> str:
-    shape = str(dataset.get("shape") or "").replace("_", " ")
     unit = str(dataset.get("unit") or "").strip()
-    return f"{shape} normalized dataset" + (f" · unit: {unit}" if unit else "")
+    return f"단위: {unit}" if unit else ""
 
 
 def _source_note_text(task: dict[str, Any]) -> str:
