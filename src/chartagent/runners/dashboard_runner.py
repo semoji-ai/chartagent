@@ -21,7 +21,9 @@ def write_chartagent_dashboard(
     output_dir.mkdir(parents=True, exist_ok=True)
     cases_dir.mkdir(parents=True, exist_ok=True)
 
-    tasks = sample_tasks or _default_sample_tasks()
+    tasks = list(sample_tasks or _default_sample_tasks())
+    if sample_tasks is None:
+        tasks = _compact_dashboard_tasks(tasks)
     rendered_cases: list[dict[str, Any]] = []
     family_counter: Counter[str] = Counter()
     theme_set_counter: Counter[str] = Counter()
@@ -54,28 +56,33 @@ def write_chartagent_dashboard(
             }
         )
 
+    theme_gallery_data = _build_theme_gallery_sections(output_dir=output_dir)
     index_html = _build_dashboard_html(
         cases=rendered_cases,
         family_counter=family_counter,
         theme_set_counter=theme_set_counter,
         warning_count=warning_count,
+        theme_sections=theme_gallery_data["sections"],
+        theme_gallery_variants=theme_gallery_data["variants"],
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_html, encoding="utf-8")
 
-    theme_gallery = _write_theme_gallery(output_dir=output_dir)
+    gallery_html = _build_theme_gallery_html(theme_gallery_data["sections"])
+    gallery_path = output_dir / "theme_gallery.html"
+    gallery_path.write_text(gallery_html, encoding="utf-8")
 
     manifest = {
         "dashboard": str(index_path),
-        "theme_gallery": str(theme_gallery["path"]),
+        "theme_gallery": str(gallery_path),
         "case_count": len(rendered_cases),
         "families": dict(family_counter),
         "theme_sets": dict(theme_set_counter),
         "warning_count": warning_count,
         "cases_dir": str(cases_dir),
-        "theme_gallery_case_count": theme_gallery["case_count"],
-        "theme_gallery_themes": theme_gallery["themes"],
-        "theme_gallery_variants": theme_gallery["variants"],
+        "theme_gallery_case_count": theme_gallery_data["case_count"],
+        "theme_gallery_themes": theme_gallery_data["themes"],
+        "theme_gallery_variants": theme_gallery_data["variants"],
     }
     (output_dir / "dashboard_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),
@@ -102,7 +109,7 @@ def _write_case_artifacts(case_dir: Path, result: Any) -> None:
         (case_dir / "render.svg").write_text(result.render_svg, encoding="utf-8")
 
 
-def _write_theme_gallery(output_dir: Path) -> dict[str, Any]:
+def _build_theme_gallery_sections(output_dir: Path) -> dict[str, Any]:
     gallery_dir = output_dir / "theme_gallery_cases"
     theme_docs_dir = output_dir / "theme_docs"
     gallery_dir.mkdir(parents=True, exist_ok=True)
@@ -152,15 +159,27 @@ def _write_theme_gallery(output_dir: Path) -> dict[str, Any]:
             }
         )
 
-    gallery_html = _build_theme_gallery_html(rendered_sections)
-    gallery_path = output_dir / "theme_gallery.html"
-    gallery_path.write_text(gallery_html, encoding="utf-8")
     return {
-        "path": gallery_path,
+        "sections": rendered_sections,
         "case_count": case_count,
         "themes": [section["theme_set"] for section in rendered_sections],
         "variants": [str(variant["key"]) for variant in _theme_gallery_variants()],
     }
+
+
+def _compact_dashboard_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    seen_task_ids: set[str] = set()
+    for task in tasks:
+        task_id = str(task.get("task_id") or "").strip()
+        if task_id.startswith("theme-set-study-"):
+            continue
+        dedupe_key = task_id or json.dumps(task, ensure_ascii=False, sort_keys=True)
+        if dedupe_key in seen_task_ids:
+            continue
+        seen_task_ids.add(dedupe_key)
+        compact.append(task)
+    return compact
 
 
 def _build_dashboard_html(
@@ -168,6 +187,8 @@ def _build_dashboard_html(
     family_counter: Counter[str],
     theme_set_counter: Counter[str],
     warning_count: int,
+    theme_sections: list[dict[str, Any]],
+    theme_gallery_variants: list[str],
 ) -> str:
     family_options = "".join(
         f'<option value="{escape(family)}">{escape(family)} ({count})</option>'
@@ -186,6 +207,31 @@ def _build_dashboard_html(
         for theme_set, count in sorted(theme_set_counter.items())
     )
     case_cards = "".join(_build_case_card(case) for case in cases)
+    theme_lab_sections = "".join(
+        _build_theme_gallery_section(section, show_variant_controls=False)
+        for section in theme_sections
+    )
+    theme_lab_theme_options = "".join(
+        f'<option value="{escape(str(section["theme_set"]))}">{escape(str(section["theme_spec"].get("label") or section["theme_set"]))}</option>'
+        for section in theme_sections
+    )
+    theme_lab_families = sorted(
+        {
+            str(case["result"].chart_spec.get("chart_family") or "invalid")
+            for section in theme_sections
+            for item in section["variants"]
+            for case in item["cases"]
+        }
+    )
+    theme_lab_family_options = "".join(
+        f'<option value="{escape(family)}">{escape(family)}</option>'
+        for family in theme_lab_families
+    )
+    theme_lab_variant_buttons = "".join(
+        f'<button class="variant-button" type="button" data-global-variant="{escape(variant)}">{escape(variant)}</button>'
+        for variant in theme_gallery_variants
+    )
+    default_variant = theme_gallery_variants[0] if theme_gallery_variants else "base"
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -254,6 +300,61 @@ def _build_dashboard_html(
       gap: 12px;
       align-items: center;
     }}
+    .hero-links {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+    .hero-link {{
+      display: inline-flex;
+      align-items: center;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.92);
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 800;
+    }}
+    .lab-shell,
+    .audit-shell {{
+      display: grid;
+      gap: 16px;
+      margin-top: 24px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }}
+    .section-header {{
+      display: grid;
+      gap: 8px;
+    }}
+    .section-title {{
+      margin: 0;
+      font-size: clamp(1.5rem, 2vw, 2.3rem);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }}
+    .section-copy {{
+      margin: 0;
+      max-width: 920px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }}
+    .lab-toolbar {{
+      display: grid;
+      grid-template-columns: minmax(0, 220px) minmax(0, 220px) minmax(0, 1fr) auto auto;
+      gap: 12px;
+      align-items: end;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,0.82);
+    }}
     .toolbar {{
       display: grid;
       grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto auto;
@@ -286,6 +387,29 @@ def _build_dashboard_html(
       background: rgba(255,255,255,0.96);
       color: var(--ink);
       font: 500 15px/1.2 "Space Grotesk", "Pretendard", "Apple SD Gothic Neo", sans-serif;
+    }}
+    .variant-controls {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }}
+    .variant-button {{
+      display: inline-flex;
+      align-items: center;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.96);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }}
+    .variant-button.active {{
+      background: #18212f;
+      color: #ffffff;
+      border-color: #18212f;
     }}
     .toggle {{
       display: inline-flex;
@@ -320,28 +444,118 @@ def _build_dashboard_html(
       background: var(--panel-strong);
       font-size: 14px;
     }}
+    .theme-lab {{
+      display: grid;
+      gap: 18px;
+    }}
+    .theme-section {{
+      display: grid;
+      gap: 14px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(255,255,255,0.9);
+    }}
+    .theme-section[hidden] {{
+      display: none;
+    }}
+    .theme-header {{
+      display: grid;
+      gap: 10px;
+    }}
+    .theme-topline {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }}
+    .theme-title {{
+      margin: 0;
+      font-size: 1.35rem;
+      line-height: 1.05;
+    }}
+    .theme-meta,
+    .signature-list,
+    .chart-notes,
+    .footer-links {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .signature,
+    .chart-note {{
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.94);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .theme-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }}
+    .chart-card {{
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background:
+        radial-gradient(circle at top left, rgba(37,99,235,0.04), transparent 24%),
+        linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.94));
+    }}
+    .chart-card[hidden] {{
+      display: none;
+    }}
+    .chart-header {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: baseline;
+      justify-content: space-between;
+    }}
+    .chart-title {{
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.2;
+    }}
+    .family-pill {{
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #ecfeff;
+      color: #155e75;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }}
     .cases {{
       display: grid;
       gap: 24px;
-      margin-top: 24px;
     }}
     .case {{
       display: grid;
-      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.72fr);
-      gap: 22px;
+      grid-template-columns: 1fr;
+      gap: 16px;
       padding: 20px;
       border: 1px solid var(--line);
       border-radius: 26px;
       background: var(--panel);
       box-shadow: var(--shadow);
     }}
-    .case-main, .case-side {{
+    .case-main {{
       display: grid;
       gap: 16px;
       min-width: 0;
-    }}
-    .case-side {{
-      align-content: start;
     }}
     .case-header {{
       display: flex;
@@ -408,14 +622,14 @@ def _build_dashboard_html(
       color: #6d28d9;
     }}
     .viz-frame {{
-      padding: 20px;
+      padding: 18px;
       border: 1px solid var(--line);
-      border-radius: 24px;
+      border-radius: 20px;
       background:
         radial-gradient(circle at top left, rgba(37,99,235,0.05), transparent 32%),
         linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.92));
       overflow: auto;
-      min-height: 520px;
+      min-height: 360px;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
     }}
     .viz-frame svg {{
@@ -452,20 +666,6 @@ def _build_dashboard_html(
       border: 1px solid var(--line);
       border-radius: 18px;
       background: var(--panel-strong);
-    }}
-    .side-panel {{
-      padding: 0;
-      overflow: hidden;
-    }}
-    .side-panel h3 {{
-      margin: 0;
-      padding: 14px 16px 10px;
-      border-bottom: 1px solid var(--line);
-    }}
-    .scroll-window {{
-      max-height: 360px;
-      overflow: auto;
-      padding: 0 14px 14px;
     }}
     .panel h3 {{
       margin: 0 0 8px;
@@ -517,6 +717,11 @@ def _build_dashboard_html(
     .details-panel .details-body {{
       padding: 0 14px 14px;
     }}
+    .details-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }}
     .footer-links {{
       display: flex;
       flex-wrap: wrap;
@@ -543,8 +748,12 @@ def _build_dashboard_html(
       display: block;
     }}
     @media (max-width: 1100px) {{
-      .case {{
+      .theme-grid,
+      .details-grid {{
         grid-template-columns: 1fr;
+      }}
+      .lab-toolbar {{
+        grid-template-columns: 1fr 1fr;
       }}
       .toolbar {{
         grid-template-columns: 1fr 1fr;
@@ -553,29 +762,85 @@ def _build_dashboard_html(
     @media (max-width: 720px) {{
       .page {{ width: min(100vw - 18px, 100%); margin: 10px auto 36px; }}
       .hero, .case {{ padding: 14px; border-radius: 20px; }}
-      .grid {{ grid-template-columns: 1fr; }}
+      .grid, .theme-grid, .details-grid {{ grid-template-columns: 1fr; }}
+      .lab-toolbar,
       .toolbar {{ grid-template-columns: 1fr; }}
       .viz-frame {{ min-height: 320px; padding: 14px; }}
-      .scroll-window {{ max-height: 240px; }}
     }}
   </style>
 </head>
 <body>
   <main class="page">
     <section class="hero">
-      <div class="eyebrow">ChartAgent Static Review</div>
-      <h1>판단과 정지 시각화의 현재 상태를 한 화면에서 확인</h1>
+      <div class="eyebrow">ChartAgent Style Lab</div>
+      <h1>theme_set과 variant를 먼저 바꾸고 chart family별 결과를 바로 비교</h1>
       <p class="lede">
-        이 대시보드는 ChartAgent core가 representative chart tasks를 어떻게 정규화하고,
-        어떤 family를 고르며, 어떤 warning과 annotation을 내는지 보여준다.
-        Remotion adapter 없이도 현재 decision ladder와 SVG static rendering 품질을 빠르게 점검할 수 있다.
+        메인 화면은 style lab이다. theme_set, variant, chart family를 먼저 고르고 바로 SVG surface language를 비교한다.
+        static audit는 아래에 압축해서 두고, raw task/spec/dataset은 필요할 때만 펼쳐 확인한다.
       </p>
       <div class="summary">
-        <span class="summary-chip"><strong>cases</strong><span>{len(cases)}</span></span>
+        <span class="summary-chip"><strong>lab themes</strong><span>{len(theme_sections)}</span></span>
+        <span class="summary-chip"><strong>lab families</strong><span>{len(theme_lab_families)}</span></span>
+        <span class="summary-chip"><strong>audit cases</strong><span>{len(cases)}</span></span>
         <span class="summary-chip"><strong>warnings</strong><span>{warning_count}</span></span>
         {family_chips}
         {theme_set_chips}
       </div>
+      <div class="hero-links">
+        <a class="hero-link" href="./theme_gallery.html">Open dedicated theme gallery</a>
+      </div>
+    </section>
+    <section class="lab-shell">
+      <header class="section-header">
+        <h2 class="section-title">Theme Lab</h2>
+        <p class="section-copy">
+          같은 theme_set이 bar, line, share, comparison table, metric wall, single stat, fact table까지 얼마나 일관되게 유지되는지 본다.
+          여기서는 variant를 전역으로 바꿔 surface language를 빠르게 비교한다.
+        </p>
+      </header>
+      <div class="lab-toolbar">
+        <div class="control">
+          <label for="lab-theme-filter">Theme Set</label>
+          <select id="lab-theme-filter">
+            <option value="all">all theme sets</option>
+            {theme_lab_theme_options}
+          </select>
+        </div>
+        <div class="control">
+          <label for="lab-family-filter">Chart Family</label>
+          <select id="lab-family-filter">
+            <option value="all">all families</option>
+            {theme_lab_family_options}
+          </select>
+        </div>
+        <div class="control">
+          <label>Variant</label>
+          <div class="variant-controls">
+            {theme_lab_variant_buttons}
+          </div>
+        </div>
+        <div class="visible-count">
+          <span>themes</span>
+          <span id="lab-visible-theme-count">{len(theme_sections)}</span>
+        </div>
+        <div class="visible-count">
+          <span>previews</span>
+          <span id="lab-visible-card-count">{len(theme_sections) * max(len(theme_lab_families), 1)}</span>
+        </div>
+      </div>
+      <div class="theme-lab">
+        {theme_lab_sections}
+      </div>
+      <div id="lab-empty-state" class="empty-state">No matching theme previews for the current style lab filter.</div>
+    </section>
+    <section class="audit-shell">
+      <header class="section-header">
+        <h2 class="section-title">Static Audit</h2>
+        <p class="section-copy">
+          representative tasks에서 family 선택, warning, annotation, raw artifacts를 빠르게 점검한다.
+          중복 theme study case는 메인 audit에서 제외했다.
+        </p>
+      </header>
       <div class="toolbar">
         <div class="control">
           <label for="family-filter">Family</label>
@@ -604,14 +869,74 @@ def _build_dashboard_html(
           <span id="visible-case-count">{len(cases)}</span>
         </div>
       </div>
+      <section class="cases">
+        {case_cards}
+      </section>
+      <div id="empty-state" class="empty-state">No matching cases for the current filter.</div>
     </section>
-    <section class="cases">
-      {case_cards}
-    </section>
-    <div id="empty-state" class="empty-state">No matching cases for the current filter.</div>
   </main>
   <script>
     (() => {{
+      const params = new URLSearchParams(window.location.search);
+      const labThemeFilter = document.getElementById("lab-theme-filter");
+      const labFamilyFilter = document.getElementById("lab-family-filter");
+      const labVisibleThemeCount = document.getElementById("lab-visible-theme-count");
+      const labVisibleCardCount = document.getElementById("lab-visible-card-count");
+      const labEmptyState = document.getElementById("lab-empty-state");
+      const labSections = Array.from(document.querySelectorAll(".theme-section"));
+      const globalVariantButtons = Array.from(document.querySelectorAll("[data-global-variant]"));
+      let activeVariant = params.get("variant") || "{escape(default_variant)}";
+
+      const applyLabFilters = () => {{
+        const themeValue = labThemeFilter.value;
+        const familyValue = labFamilyFilter.value;
+        let visibleThemes = 0;
+        let visibleCards = 0;
+        labSections.forEach((section) => {{
+          const themeSet = section.dataset.themeSet || "";
+          const matchesTheme = themeValue === "all" || themeSet === themeValue;
+          let sectionVisibleCards = 0;
+          Array.from(section.querySelectorAll(".chart-card")).forEach((card) => {{
+            const matchesVariant = (card.dataset.variant || "base") === activeVariant;
+            const matchesFamily = familyValue === "all" || (card.dataset.family || "") === familyValue;
+            const show = matchesTheme && matchesVariant && matchesFamily;
+            card.hidden = !show;
+            if (show) {{
+              sectionVisibleCards += 1;
+            }}
+          }});
+          section.hidden = sectionVisibleCards == 0;
+          if (!section.hidden) {{
+            visibleThemes += 1;
+          }}
+          visibleCards += sectionVisibleCards;
+        }});
+        labVisibleThemeCount.textContent = String(visibleThemes);
+        labVisibleCardCount.textContent = String(visibleCards);
+        labEmptyState.classList.toggle("active", visibleCards === 0);
+      }};
+
+      const setGlobalVariant = (variant) => {{
+        activeVariant = variant;
+        globalVariantButtons.forEach((button) => {{
+          button.classList.toggle("active", button.dataset.globalVariant === variant);
+        }});
+        applyLabFilters();
+      }};
+
+      if (params.has("theme")) {{
+        labThemeFilter.value = params.get("theme") || "all";
+      }}
+      if (params.has("lab_family")) {{
+        labFamilyFilter.value = params.get("lab_family") || "all";
+      }}
+      labThemeFilter.addEventListener("change", applyLabFilters);
+      labFamilyFilter.addEventListener("change", applyLabFilters);
+      globalVariantButtons.forEach((button) => {{
+        button.addEventListener("click", () => setGlobalVariant(button.dataset.globalVariant || "{escape(default_variant)}"));
+      }});
+      setGlobalVariant(activeVariant);
+
       const familyFilter = document.getElementById("family-filter");
       const themeSetFilter = document.getElementById("theme-set-filter");
       const warningOnlyToggle = document.getElementById("warning-only-toggle");
@@ -619,7 +944,6 @@ def _build_dashboard_html(
       const cards = Array.from(document.querySelectorAll(".case"));
       const visibleCaseCount = document.getElementById("visible-case-count");
       const emptyState = document.getElementById("empty-state");
-      const params = new URLSearchParams(window.location.search);
 
       if (params.has("family")) {{
         familyFilter.value = params.get("family") || "all";
@@ -966,7 +1290,7 @@ def _build_theme_gallery_html(sections: list[dict[str, Any]]) -> str:
 """
 
 
-def _build_theme_gallery_section(section: dict[str, Any]) -> str:
+def _build_theme_gallery_section(section: dict[str, Any], *, show_variant_controls: bool = True) -> str:
     theme_set = str(section["theme_set"])
     theme_spec = section["theme_spec"]
     theme_doc_relpath = section.get("theme_doc_relpath")
@@ -987,14 +1311,16 @@ def _build_theme_gallery_section(section: dict[str, Any]) -> str:
         if theme_doc_relpath
         else ""
     )
-    variant_controls = "".join(
-        f'<button class="variant-button" type="button" data-variant-button="{escape(str(item["variant"]["key"]))}">{escape(str(item["variant"]["label"]))}</button>'
-        for item in variants
-    )
-    variant_controls += '<button class="variant-button reset" type="button" data-variant-button="base" data-reset-target="base">Reset to Theme</button>'
+    variant_controls = ""
+    if show_variant_controls:
+        variant_controls = "".join(
+            f'<button class="variant-button" type="button" data-variant-button="{escape(str(item["variant"]["key"]))}">{escape(str(item["variant"]["label"]))}</button>'
+            for item in variants
+        )
+        variant_controls += '<button class="variant-button reset" type="button" data-variant-button="base" data-reset-target="base">Reset to Theme</button>'
     cards = "".join(_build_theme_gallery_card(case) for item in variants for case in item["cases"])
     return f"""
-    <section class="theme-section" id="theme-{escape(theme_set.replace('_', '-'))}">
+    <section class="theme-section" id="theme-{escape(theme_set.replace('_', '-'))}" data-theme-set="{escape(theme_set)}">
       <header class="theme-header">
         <div class="theme-topline">
           <h2 class="theme-title">{escape(label)}</h2>
@@ -1008,7 +1334,7 @@ def _build_theme_gallery_section(section: dict[str, Any]) -> str:
         </div>
         <p class="theme-description">{escape(description)}</p>
         {doc_link}
-        <div class="variant-controls">{variant_controls}</div>
+        {'<div class="variant-controls">' + variant_controls + '</div>' if variant_controls else ''}
         <div class="signature-list">{signatures}{source_ref_pills}</div>
       </header>
       <div class="theme-grid">{cards}</div>
@@ -1030,8 +1356,18 @@ def _build_theme_gallery_card(case: dict[str, Any]) -> str:
     if why:
         note_bits.append(str(why[0]))
     notes = "".join(f'<span class="chart-note">{escape(bit)}</span>' for bit in note_bits)
+    search_text = " ".join(
+        [
+            title,
+            family,
+            str(case["variant_label"]),
+            str(case["task"].get("question") or ""),
+            str(case["task"].get("theme_set") or ""),
+            " ".join(str(item) for item in why[:2]),
+        ]
+    ).strip().lower()
     return f"""
-    <article class="chart-card" data-variant="{escape(str(case['variant_key']))}">
+    <article class="chart-card" data-variant="{escape(str(case['variant_key']))}" data-family="{escape(family)}" data-search="{escape(search_text)}">
       <div class="chart-header">
         <h3 class="chart-title">{escape(title)} <span style="color:#64748b;font-weight:600;">· {escape(str(case['variant_label']))}</span></h3>
         <span class="family-pill">{escape(family)}</span>
@@ -1162,25 +1498,24 @@ def _build_case_card(case: dict[str, Any]) -> str:
           </section>
         </div>
         <details class="panel details-panel">
-          <summary>Task Input <span>expand</span></summary>
+          <summary>Raw Artifacts <span>expand</span></summary>
           <div class="details-body">
-            <pre class="code">{escape(task_json)}</pre>
+            <div class="details-grid">
+              <section class="panel">
+                <h3>Task Input</h3>
+                <pre class="code">{escape(task_json)}</pre>
+              </section>
+              <section class="panel">
+                <h3>Chart Spec</h3>
+                <pre class="code">{escape(spec_json)}</pre>
+              </section>
+              <section class="panel">
+                <h3>Dataset</h3>
+                <pre class="code">{escape(dataset_json)}</pre>
+              </section>
+            </div>
           </div>
         </details>
-      </div>
-      <div class="case-side">
-        <section class="panel side-panel">
-          <h3>Chart Spec</h3>
-          <div class="scroll-window">
-            <pre class="code">{escape(spec_json)}</pre>
-          </div>
-        </section>
-        <section class="panel side-panel">
-          <h3>Dataset</h3>
-          <div class="scroll-window">
-            <pre class="code">{escape(dataset_json)}</pre>
-          </div>
-        </section>
       </div>
     </article>
     """
