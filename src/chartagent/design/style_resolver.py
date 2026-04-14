@@ -420,6 +420,14 @@ def _resolve_pattern_policy(task: dict[str, Any], dataset: dict[str, Any], chart
             "fill_treatment": "outline_only",
         }
     if explicit_pattern:
+        if chart_family in {"donut", "pie"}:
+            return {
+                "enabled": True,
+                "reason": "explicit_pattern",
+                "target_mode": "tagged_or_secondary",
+                "pattern_kind": "diagonal_hatch",
+                "fill_treatment": "outline_plus_hatch",
+            }
         return {
             "enabled": True,
             "reason": "explicit_pattern",

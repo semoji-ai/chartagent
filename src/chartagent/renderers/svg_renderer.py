@@ -200,21 +200,45 @@ def _render_donut(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
     height = 560
     cx = 270
     cy = 285
-    radius = 120
+    outer_radius = 140
+    inner_radius = 100
+    radius = (outer_radius + inner_radius) / 2
+    band_width = outer_radius - inner_radius
     circumference = 2 * 3.141592653589793 * radius
     total = sum(float(record.get("value") or 0.0) for record in records) or 1.0
     colors = _share_palette(chart_spec)
     offset = 0.0
+    start_angle = -90.0
     parts = _svg_parts(width, height, chart_spec)
     pattern_defs: list[str] = []
     patterned_indexes = _pattern_indexes(chart_spec, records, "donut")
+    hatch_outlined = _fill_treatment(chart_spec) == "outline_plus_hatch"
     parts.append(
-        f'<circle cx="{cx}" cy="{cy}" r="{radius}" stroke="{_theme_token(chart_spec, "track", "#e2e8f0")}" stroke-width="40" fill="none" />'
+        f'<circle cx="{cx}" cy="{cy}" r="{radius}" stroke="{_theme_token(chart_spec, "track", "#e2e8f0")}" stroke-width="{band_width}" fill="none" />'
     )
     for index, record in enumerate(records):
         value = float(record.get("value") or 0.0)
         dash = (value / total) * circumference
-        segment_stroke = colors[index % len(colors)]
+        color = colors[index % len(colors)]
+        if hatch_outlined:
+            sweep = (value / total) * 360.0
+            end_angle = start_angle + sweep
+            segment_style = {"paint": color, "stroke": color, "stroke_width": _motif_token(chart_spec, "patterned_outline_width", 2.2)}
+            if index in patterned_indexes:
+                segment_style = _series_fill_style(
+                    chart_spec,
+                    pattern_defs,
+                    slot=f"donut-{index}",
+                    base_color=color,
+                )
+            parts.append(
+                f'<path d="{_donut_slice_path(cx=cx, cy=cy, outer_radius=outer_radius, inner_radius=inner_radius, start_angle=start_angle, end_angle=end_angle)}" '
+                f'fill="{segment_style["paint"]}"{_svg_optional_stroke(segment_style["stroke"], segment_style["stroke_width"])} />'
+            )
+            start_angle = end_angle
+            offset += dash
+            continue
+        segment_stroke = color
         if index in patterned_indexes:
             segment_stroke = _series_fill_style(
                 chart_spec,
@@ -1318,6 +1342,12 @@ def _pattern_indexes(chart_spec: dict[str, Any], records: list[dict[str, Any]], 
     if not policy.get("enabled") or not records:
         return set()
     if (
+        chart_family in {"donut", "pie"}
+        and str(policy.get("fill_treatment") or "") == "outline_plus_hatch"
+        and str(policy.get("reason") or "") in {"explicit_pattern", "explicit_outline_pattern"}
+    ):
+        return set(range(len(records)))
+    if (
         str(policy.get("pattern_kind") or "") == "dot_sparse"
         and str(policy.get("reason") or "") in {"accessibility", "explicit_dot"}
         and chart_family in {"donut", "pie"}
@@ -1547,7 +1577,7 @@ def _series_fill_style(
 ) -> dict[str, Any]:
     treatment = _fill_treatment(chart_spec)
     if geometry == "stroke":
-        if treatment == "pattern_overlay":
+        if treatment in {"pattern_overlay", "outline_plus_hatch", "transparent_range_hatch"}:
             return {"paint": _pattern_fill(chart_spec, pattern_defs, slot=slot, base_color=base_color), "stroke": None, "stroke_width": None}
         return {"paint": base_color, "stroke": None, "stroke_width": None}
     if treatment == "outline_only":
@@ -1628,6 +1658,33 @@ def _pie_slice_path(cx: float, cy: float, radius: float, start_angle: float, end
         f"M {cx:.2f} {cy:.2f} "
         f"L {start_x:.2f} {start_y:.2f} "
         f"A {radius:.2f} {radius:.2f} 0 {large_arc} 1 {end_x:.2f} {end_y:.2f} "
+        f"Z"
+    )
+
+
+def _donut_slice_path(
+    *,
+    cx: float,
+    cy: float,
+    outer_radius: float,
+    inner_radius: float,
+    start_angle: float,
+    end_angle: float,
+) -> str:
+    outer_start_x = cx + outer_radius * math.cos(math.radians(start_angle))
+    outer_start_y = cy + outer_radius * math.sin(math.radians(start_angle))
+    outer_end_x = cx + outer_radius * math.cos(math.radians(end_angle))
+    outer_end_y = cy + outer_radius * math.sin(math.radians(end_angle))
+    inner_start_x = cx + inner_radius * math.cos(math.radians(start_angle))
+    inner_start_y = cy + inner_radius * math.sin(math.radians(start_angle))
+    inner_end_x = cx + inner_radius * math.cos(math.radians(end_angle))
+    inner_end_y = cy + inner_radius * math.sin(math.radians(end_angle))
+    large_arc = 1 if end_angle - start_angle > 180 else 0
+    return (
+        f"M {outer_start_x:.2f} {outer_start_y:.2f} "
+        f"A {outer_radius:.2f} {outer_radius:.2f} 0 {large_arc} 1 {outer_end_x:.2f} {outer_end_y:.2f} "
+        f"L {inner_end_x:.2f} {inner_end_y:.2f} "
+        f"A {inner_radius:.2f} {inner_radius:.2f} 0 {large_arc} 0 {inner_start_x:.2f} {inner_start_y:.2f} "
         f"Z"
     )
 

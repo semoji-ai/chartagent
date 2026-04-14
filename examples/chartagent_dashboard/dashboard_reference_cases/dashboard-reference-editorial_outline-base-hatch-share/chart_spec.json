@@ -89,8 +89,8 @@
       "enabled": true,
       "reason": "explicit_pattern",
       "target_mode": "tagged_or_secondary",
-      "pattern_kind": "",
-      "fill_treatment": "pattern_overlay"
+      "pattern_kind": "diagonal_hatch",
+      "fill_treatment": "outline_plus_hatch"
     },
     "theme_tokens": {
       "bg": "#f8efe3",

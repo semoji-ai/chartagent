@@ -294,14 +294,6 @@ def _build_dashboard_html(
         for item in section["variants"]
         for case in item["cases"]
     )
-    summary_family_chips = "".join(
-        f'<span class="summary-chip"><strong>{escape(family)}</strong><span>{count}</span></span>'
-        for family, count in family_counter.most_common(4)
-    )
-    summary_theme_chips = "".join(
-        f'<span class="summary-chip"><strong>{escape(theme_set)}</strong><span>{count}</span></span>'
-        for theme_set, count in theme_set_counter.most_common(4)
-    )
     resource_links = "".join(
         f'<a class="resource-link" href="./cases/{escape(str(case["slug"]))}/render.svg">{escape(str(case["title"]))}</a>'
         for case in cases[:6]
@@ -337,68 +329,31 @@ def _build_dashboard_html(
     }}
     .page {{
       width: min(1720px, calc(100vw - 32px));
-      margin: 24px auto 48px;
+      margin: 18px auto 40px;
       display: grid;
-      gap: 24px;
+      gap: 18px;
     }}
     .hero {{
       display: grid;
-      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
-      gap: 18px;
-      padding: 28px;
+      gap: 8px;
+      padding: 18px 22px;
       border: 1px solid var(--line);
-      border-radius: 28px;
+      border-radius: 22px;
       background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.78));
       box-shadow: var(--shadow);
     }}
-    .hero-main,
-    .hero-side {{
-      display: grid;
-      gap: 14px;
-      align-content: start;
-    }}
-    .eyebrow {{
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-    }}
     h1 {{
       margin: 0;
-      font-size: clamp(2rem, 3vw, 3.5rem);
-      line-height: 0.95;
+      font-size: clamp(1.8rem, 2.4vw, 2.5rem);
+      line-height: 1;
       letter-spacing: -0.04em;
     }}
     .lede {{
-      max-width: 880px;
+      max-width: 760px;
       margin: 0;
       color: var(--muted);
-      font-size: 1rem;
-      line-height: 1.65;
-    }}
-    .summary {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-    }}
-    .hero-links {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }}
-    .hero-link {{
-      display: inline-flex;
-      align-items: center;
-      padding: 10px 14px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: rgba(255,255,255,0.92);
-      color: var(--accent);
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 800;
+      font-size: 0.95rem;
+      line-height: 1.55;
     }}
     .workspace-shell,
     .resource-shell {{
@@ -427,11 +382,21 @@ def _build_dashboard_html(
       font-size: 15px;
       line-height: 1.6;
     }}
+    .workspace-body {{
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }}
+    .workspace-sidebar {{
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }}
     .workspace-toolbar {{
       display: grid;
-      grid-template-columns: minmax(0, 260px) minmax(0, 200px) minmax(0, 200px) auto;
-      gap: 12px;
-      align-items: end;
+      gap: 10px;
+      align-content: start;
       padding: 14px;
       border: 1px solid var(--line);
       border-radius: 22px;
@@ -460,20 +425,11 @@ def _build_dashboard_html(
       color: var(--ink);
       font: 500 15px/1.2 "Space Grotesk", "Pretendard", "Apple SD Gothic Neo", sans-serif;
     }}
-    .summary-chip {{
-      display: inline-flex;
-      gap: 10px;
-      align-items: center;
-      padding: 10px 14px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--panel-strong);
-      font-size: 14px;
-    }}
     .visible-count {{
       display: inline-flex;
       gap: 8px;
       align-items: center;
+      justify-content: center;
       padding: 12px 14px;
       border: 1px solid var(--line);
       border-radius: 14px;
@@ -487,12 +443,15 @@ def _build_dashboard_html(
       display: grid;
       gap: 14px;
     }}
+    .theme-brief-strip {{
+      min-width: 0;
+    }}
     .theme-brief {{
       display: grid;
-      gap: 14px;
-      padding: 16px 18px;
+      gap: 10px;
+      padding: 14px 16px;
       border: 1px solid var(--line);
-      border-radius: 24px;
+      border-radius: 22px;
       background: rgba(255,255,255,0.9);
     }}
     .theme-brief[hidden] {{
@@ -512,13 +471,14 @@ def _build_dashboard_html(
     }}
     .theme-brief-title {{
       margin: 0;
-      font-size: 1.5rem;
+      font-size: 1.2rem;
       line-height: 1;
     }}
     .theme-brief-copy {{
       margin: 0;
       color: var(--muted);
-      line-height: 1.65;
+      line-height: 1.55;
+      font-size: 14px;
     }}
     .theme-brief-meta,
     .theme-brief-signatures,
@@ -552,6 +512,10 @@ def _build_dashboard_html(
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 16px;
+    }}
+    .reference-stage {{
+      display: grid;
+      gap: 12px;
     }}
     .reference-card {{
       display: grid;
@@ -735,11 +699,8 @@ def _build_dashboard_html(
       .detail-grid {{
         grid-template-columns: 1fr;
       }}
-      .hero {{
+      .workspace-body {{
         grid-template-columns: 1fr;
-      }}
-      .workspace-toolbar {{
-        grid-template-columns: 1fr 1fr;
       }}
     }}
     @media (max-width: 1450px) {{
@@ -753,6 +714,7 @@ def _build_dashboard_html(
       .workspace-shell,
       .resource-shell,
       .theme-brief {{ padding: 14px; border-radius: 20px; }}
+      .workspace-body,
       .workspace-toolbar {{ grid-template-columns: 1fr; }}
       .detail-grid,
       .reference-grid {{ grid-template-columns: 1fr; }}
@@ -766,28 +728,8 @@ def _build_dashboard_html(
 <body>
   <main class="page">
     <section class="hero">
-      <div class="hero-main">
-        <div class="eyebrow">ChartAgent Reference Workspace</div>
-        <h1>기준차트 9종을 한 화면에서 보고, theme_set과 pattern treatment만 바꾸는 대시보드</h1>
-        <p class="lede">
-          메인 대시보드는 audit wall이 아니라 reference stage다. 기준차트 9종을 고정하고 theme_set과 pattern treatment만 바꾸면서
-          같은 구조 위에 시각 언어가 어떻게 달라지는지 본다. 상세는 카드 클릭 시 모달에서만 확인한다.
-        </p>
-      </div>
-      <div class="hero-side">
-        <div class="summary">
-          <span class="summary-chip"><strong>themes</strong><span>{len(theme_sections)}</span></span>
-          <span class="summary-chip"><strong>reference families</strong><span>{len(reference_families)}</span></span>
-          <span class="summary-chip"><strong>audit bundles</strong><span>{len(cases)}</span></span>
-          <span class="summary-chip"><strong>warnings</strong><span>{warning_count}</span></span>
-          {summary_family_chips}
-          {summary_theme_chips}
-        </div>
-        <div class="hero-links">
-          <a class="hero-link" href="./theme_gallery.html">Open dedicated theme gallery</a>
-          <a class="hero-link" href="./dashboard_manifest.json">Open dashboard manifest</a>
-        </div>
-      </div>
+      <h1>ChartAgent</h1>
+      <p class="lede">기준차트 9종을 한 화면에서 보고, theme_set과 pattern treatment만 바꾸는 대시보드.</p>
     </section>
     <section class="workspace-shell">
       <header class="section-header">
@@ -797,42 +739,44 @@ def _build_dashboard_html(
           `theme_set`과 `pattern treatment`만 바꿔가며 같은 세트 전체에 스타일이 어떻게 덮이는지 바로 확인한다.
         </p>
       </header>
-      <div class="workspace-toolbar">
-        <div class="control">
-          <label for="reference-theme-select">Theme Set</label>
-          <select id="reference-theme-select">
-            {theme_options}
-          </select>
-        </div>
-        <div class="control">
-          <label for="reference-family-filter">Reference Family</label>
-          <select id="reference-family-filter">
-            <option value="all">all families</option>
-            {family_options}
-          </select>
-        </div>
-        <div class="control">
-          <label for="reference-pattern-filter">Pattern Treatment</label>
-          <select id="reference-pattern-filter">
-            {pattern_filter_options}
-          </select>
-        </div>
-        <div class="visible-count">
-          <span>visible</span>
-          <span id="reference-visible-count">9</span>
-        </div>
-      </div>
-      <section class="workspace-stage">
-        <div class="theme-brief-strip">
-          {theme_briefs}
-        </div>
-        <section class="reference-stage">
+      <div class="workspace-body">
+        <aside class="workspace-sidebar">
+          <div class="workspace-toolbar">
+            <div class="control">
+              <label for="reference-theme-select">Theme Set</label>
+              <select id="reference-theme-select">
+                {theme_options}
+              </select>
+            </div>
+            <div class="control">
+              <label for="reference-family-filter">Reference Family</label>
+              <select id="reference-family-filter">
+                <option value="all">all families</option>
+                {family_options}
+              </select>
+            </div>
+            <div class="control">
+              <label for="reference-pattern-filter">Pattern Treatment</label>
+              <select id="reference-pattern-filter">
+                {pattern_filter_options}
+              </select>
+            </div>
+            <div class="visible-count">
+              <span>visible</span>
+              <span id="reference-visible-count">9</span>
+            </div>
+          </div>
+          <div class="theme-brief-strip">
+            {theme_briefs}
+          </div>
+        </aside>
+        <section class="workspace-stage">
           <div id="reference-grid" class="reference-grid">
             {reference_cards}
           </div>
           <div id="reference-empty-state" class="empty-state">No matching reference charts for the current theme, family, and pattern selection.</div>
         </section>
-      </section>
+      </div>
     </section>
     <section class="resource-shell">
       <header class="section-header">

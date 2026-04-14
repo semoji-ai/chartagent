@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -383,6 +384,36 @@ class ChartAgentRunnerTests(unittest.TestCase):
         self.assertIn(result.chart_spec["style_spec"]["pattern_policy"]["reason"], {"explicit_dot", "accessibility"})
         self.assertGreaterEqual(result.render_svg.count('<pattern id="cg-pattern-donut-'), 4)
         self.assertTrue('width="24.00"' in result.render_svg or 'width="18.00"' in result.render_svg)
+
+    def test_build_chart_artifacts_renders_hatch_donut_as_hollow_pattern_band(self) -> None:
+        result = build_chart_artifacts(
+            {
+                "task_id": "neutral-hatch-share-test",
+                "goal": "show composition with hatch pattern",
+                "question": "빗금 패턴으로 비중을 구분하라",
+                "dataset": {
+                    "title": "유입 비중",
+                    "items": [
+                        {"label": "Organic", "value": 42, "unit": "%"},
+                        {"label": "Paid", "value": 27, "unit": "%"},
+                        {"label": "Partner", "value": 19, "unit": "%"},
+                        {"label": "Newsletter", "value": 12, "unit": "%"},
+                    ],
+                },
+                "source_hints": ["Pattern reference set"],
+            }
+        )
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.chart_spec["chart_family"], "donut")
+        self.assertEqual(result.chart_spec["style_spec"]["pattern_policy"]["reason"], "explicit_pattern")
+        self.assertEqual(result.chart_spec["style_spec"]["pattern_policy"]["fill_treatment"], "outline_plus_hatch")
+        self.assertGreaterEqual(result.render_svg.count('fill="url(#cg-pattern-donut-'), 4)
+        self.assertGreaterEqual(result.render_svg.count('<path d="M '), 4)
+        self.assertGreaterEqual(result.render_svg.count('stroke="#'), 4)
+        pattern_match = re.search(r'<pattern id="cg-pattern-donut-1"[^>]*>(.*?)</pattern>', result.render_svg)
+        self.assertIsNotNone(pattern_match)
+        self.assertNotIn('<rect x="0" y="0"', pattern_match.group(1))
 
     def test_build_chart_artifacts_applies_outline_only_fill_treatment_for_preliminary_bar(self) -> None:
         result = build_chart_artifacts(
