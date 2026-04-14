@@ -5,7 +5,7 @@
   "chart_variant": "vertical",
   "title_mode": "question_first",
   "title_text": "갤러리 인포그래픽 스타일로 줄무늬 막대를 보여라",
-  "subtitle_text": "label value list normalized dataset · unit: 만",
+  "subtitle_text": "단위: 만",
   "annotation_strategy": "minimal",
   "label_strategy": "short_labels_bottom",
   "legend_strategy": "none",

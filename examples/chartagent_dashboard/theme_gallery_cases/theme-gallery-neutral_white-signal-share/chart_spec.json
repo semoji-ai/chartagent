@@ -5,7 +5,7 @@
   "chart_variant": "share",
   "title_mode": "question_first",
   "title_text": "유입 비중은 어떻게 나뉘는가?",
-  "subtitle_text": "share breakdown normalized dataset",
+  "subtitle_text": "",
   "annotation_strategy": "highlight_dominant_slice",
   "label_strategy": "compact",
   "legend_strategy": "implicit",

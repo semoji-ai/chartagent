@@ -5,7 +5,7 @@
   "chart_variant": "chronology",
   "title_mode": "goal_first",
   "title_text": "주요 연혁",
-  "subtitle_text": "text rich table normalized dataset",
+  "subtitle_text": "",
   "annotation_strategy": "minimal",
   "label_strategy": "table_headers",
   "legend_strategy": "implicit",

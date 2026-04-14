@@ -5,7 +5,7 @@
   "chart_variant": "share",
   "title_mode": "question_first",
   "title_text": "파이 차트로 유입 비중을 보여라",
-  "subtitle_text": "share breakdown normalized dataset",
+  "subtitle_text": "",
   "annotation_strategy": "highlight_dominant_slice",
   "label_strategy": "compact",
   "legend_strategy": "implicit",

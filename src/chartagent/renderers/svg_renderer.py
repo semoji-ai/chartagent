@@ -1276,6 +1276,11 @@ def _pattern_format_scope(chart_spec: dict[str, Any]) -> str:
     return str(style_spec.get("pattern_format_scope") or "")
 
 
+def _style_spec_value(chart_spec: dict[str, Any], key: str, default: str = "") -> str:
+    style_spec = chart_spec.get("style_spec") or {}
+    return str(style_spec.get(key) or default)
+
+
 def _note_has_pattern_signal(note: Any) -> bool:
     text = str(note or "").strip().lower()
     if not text:
@@ -1312,6 +1317,12 @@ def _pattern_indexes(chart_spec: dict[str, Any], records: list[dict[str, Any]], 
     policy = _pattern_policy(chart_spec)
     if not policy.get("enabled") or not records:
         return set()
+    if (
+        str(policy.get("pattern_kind") or "") == "dot_sparse"
+        and str(policy.get("reason") or "") in {"accessibility", "explicit_dot"}
+        and chart_family in {"donut", "pie"}
+    ):
+        return set(range(len(records)))
     if _pattern_format_scope(chart_spec) == "chart_wide" and chart_family in {"bar", "bar_horizontal", "stacked_progress", "percentage_progress"}:
         return set(range(len(records)))
     tagged = {index for index, record in enumerate(records) if _note_has_pattern_signal(record.get("note"))}
@@ -1358,7 +1369,10 @@ def _append_pattern_def(
     opacity = float(_motif_token(chart_spec, "pattern_opacity", 0.22) or 0.22)
     background_color = _theme_token(chart_spec, "bg", "#ffffff")
     stripe_color = background_color
-    width = f"{spacing:.2f}"
+    tile_size = spacing
+    if pattern_kind == "dot_sparse":
+        tile_size = _dot_pattern_tile_size(chart_spec, spacing=spacing)
+    width = f"{tile_size:.2f}"
     pattern_parts = [f'<pattern id="{pattern_id}" patternUnits="userSpaceOnUse" width="{width}" height="{width}">']
     if fill_treatment == "pattern_overlay":
         pattern_parts.append(f'<rect x="0" y="0" width="{width}" height="{width}" fill="{base_color}" />')
@@ -1375,8 +1389,14 @@ def _append_pattern_def(
         stripe_color = base_color
         opacity = max(opacity + 0.18, 0.4)
     if pattern_kind == "dot_sparse":
-        pattern_parts.append(
-            f'<circle cx="{spacing / 2:.2f}" cy="{spacing / 2:.2f}" r="{max(1.0, stroke_width * 0.9):.2f}" fill="{stripe_color}" fill-opacity="{opacity}" />'
+        pattern_parts.extend(
+            _dot_pattern_elements(
+                chart_spec,
+                tile_size=tile_size,
+                stroke_width=stroke_width,
+                dot_color=stripe_color,
+                opacity=opacity,
+            )
         )
     elif pattern_kind == "crosshatch_light":
         pattern_parts.append(
@@ -1396,6 +1416,109 @@ def _append_pattern_def(
         )
     pattern_parts.append("</pattern>")
     pattern_defs.append("".join(pattern_parts))
+
+
+def _dot_pattern_elements(
+    chart_spec: dict[str, Any],
+    *,
+    tile_size: float,
+    stroke_width: float,
+    dot_color: str,
+    opacity: float,
+) -> list[str]:
+    variant = _dot_pattern_variant(chart_spec)
+    base_radius = _dot_pattern_base_radius(chart_spec, tile_size=tile_size, stroke_width=stroke_width)
+    dot_specs: list[tuple[float, float, float, float]]
+    if variant == "signal_grid":
+        dot_specs = [
+            (0.24, 0.24, 0.92, 0.88),
+            (0.76, 0.24, 1.18, 1.0),
+            (0.24, 0.76, 1.18, 1.0),
+            (0.76, 0.76, 0.92, 0.88),
+        ]
+    elif variant == "poster_polka":
+        dot_specs = [
+            (0.22, 0.22, 1.72, 0.96),
+            (0.76, 0.22, 0.88, 0.62),
+            (0.68, 0.72, 1.34, 0.84),
+            (0.12, 0.82, 0.62, 0.44),
+        ]
+    elif variant == "halftone_cluster":
+        dot_specs = [
+            (0.18, 0.22, 0.72, 0.42),
+            (0.42, 0.26, 1.24, 0.72),
+            (0.70, 0.34, 1.92, 1.0),
+            (0.58, 0.66, 1.08, 0.62),
+            (0.24, 0.78, 0.54, 0.34),
+        ]
+    elif variant == "perforation_grid":
+        dot_specs = [
+            (0.18, 0.18, 0.78, 0.68),
+            (0.50, 0.18, 1.24, 0.96),
+            (0.82, 0.18, 0.78, 0.68),
+            (0.18, 0.50, 1.24, 0.96),
+            (0.50, 0.50, 0.92, 0.82),
+            (0.82, 0.50, 1.24, 0.96),
+            (0.18, 0.82, 0.78, 0.68),
+            (0.50, 0.82, 1.24, 0.96),
+            (0.82, 0.82, 0.78, 0.68),
+        ]
+    else:
+        dot_specs = [
+            (0.26, 0.24, 1.34, 0.94),
+            (0.74, 0.54, 0.94, 0.72),
+            (0.18, 0.80, 0.68, 0.52),
+            (0.84, 0.84, 0.58, 0.44),
+        ]
+    return [
+        (
+            f'<circle cx="{tile_size * x:.2f}" cy="{tile_size * y:.2f}" '
+            f'r="{base_radius * scale:.2f}" fill="{dot_color}" fill-opacity="{min(1.0, opacity * alpha):.3f}" />'
+        )
+        for x, y, scale, alpha in dot_specs
+    ]
+
+
+def _dot_pattern_tile_size(chart_spec: dict[str, Any], *, spacing: float) -> float:
+    variant = _dot_pattern_variant(chart_spec)
+    if variant == "poster_polka":
+        return max(24.0, spacing * 2.6)
+    if variant == "halftone_cluster":
+        return max(20.0, spacing * 2.2)
+    if variant == "signal_grid":
+        return max(14.0, spacing * 1.55)
+    if variant == "perforation_grid":
+        return max(16.0, spacing * 1.8)
+    return max(18.0, spacing * 2.0)
+
+
+def _dot_pattern_base_radius(chart_spec: dict[str, Any], *, tile_size: float, stroke_width: float) -> float:
+    variant = _dot_pattern_variant(chart_spec)
+    if variant == "poster_polka":
+        return max(2.8, stroke_width * 2.0, tile_size * 0.18)
+    if variant == "halftone_cluster":
+        return max(2.2, stroke_width * 1.7, tile_size * 0.16)
+    if variant == "signal_grid":
+        return max(1.7, stroke_width * 1.3, tile_size * 0.11)
+    if variant == "perforation_grid":
+        return max(1.9, stroke_width * 1.45, tile_size * 0.12)
+    return max(2.0, stroke_width * 1.55, tile_size * 0.13)
+
+
+def _dot_pattern_variant(chart_spec: dict[str, Any]) -> str:
+    theme_set = _style_spec_value(chart_spec, "theme_set")
+    combo = _style_spec_value(chart_spec, "style_combo_preset")
+    theme_name = _style_spec_value(chart_spec, "theme_name")
+    if combo == "broadcast_signal" or theme_name == "broadcast":
+        return "signal_grid"
+    if combo == "poster_editorial" or theme_set == "poster_editorial":
+        return "poster_polka"
+    if combo == "gallery_infographic" or theme_set == "gallery_infographic":
+        # Pinterest-style references favored halftone clusters over a uniform dot lattice.
+        return "halftone_cluster"
+    if combo in {"analytical_panel", "market_technical"} or theme_name == "dashboard":
+        return "perforation_grid"
+    return "offset_triplet"
 
 
 def _pattern_fill(chart_spec: dict[str, Any], pattern_defs: list[str], *, slot: str, base_color: str) -> str:

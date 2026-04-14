@@ -327,6 +327,63 @@ class ChartAgentRunnerTests(unittest.TestCase):
         self.assertIn('fill="url(#cg-pattern-bar-2)"', result.render_svg)
         self.assertGreaterEqual(result.render_svg.count('stroke="#2563eb" stroke-width="2.2"'), 3)
 
+    def test_build_chart_artifacts_applies_explicit_dot_pattern_with_halftone_cluster(self) -> None:
+        result = build_chart_artifacts(
+            {
+                "task_id": "gallery-dot-pattern-bar-test",
+                "goal": "show category comparison with dot pattern",
+                "question": "핀터레스트 무드보드처럼 점무늬 패턴으로 채널을 비교하라",
+                "theme_set": "gallery_infographic",
+                "dataset": {
+                    "title": "채널 반응도",
+                    "unit": "pt",
+                    "items": [
+                        {"label": "A", "value": 18},
+                        {"label": "B", "value": 14},
+                        {"label": "C", "value": 9},
+                        {"label": "D", "value": 6},
+                    ],
+                },
+                "source_hints": ["Pinterest reference board"],
+            }
+        )
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.chart_spec["chart_family"], "bar")
+        self.assertTrue(result.chart_spec["style_spec"]["pattern_policy"]["enabled"])
+        self.assertEqual(result.chart_spec["style_spec"]["pattern_policy"]["reason"], "explicit_dot")
+        self.assertEqual(result.chart_spec["style_spec"]["pattern_policy"]["fill_treatment"], "pattern_overlay")
+        self.assertEqual(result.chart_spec["style_spec"]["style_combo_preset"], "gallery_infographic")
+        self.assertIn('<pattern id="cg-pattern-bar-0"', result.render_svg)
+        self.assertIn('fill="url(#cg-pattern-bar-0)"', result.render_svg)
+        self.assertGreaterEqual(result.render_svg.count("<circle"), 20)
+        self.assertTrue('r="4.' in result.render_svg or 'r="3.' in result.render_svg)
+
+    def test_build_chart_artifacts_applies_dot_pattern_to_all_share_slices(self) -> None:
+        result = build_chart_artifacts(
+            {
+                "task_id": "neutral-dot-share-test",
+                "goal": "show composition with dot pattern",
+                "question": "점무늬 패턴으로 비중을 구분하라",
+                "dataset": {
+                    "title": "유입 비중",
+                    "items": [
+                        {"label": "Organic", "value": 38, "unit": "%"},
+                        {"label": "Paid", "value": 26, "unit": "%"},
+                        {"label": "Partner", "value": 21, "unit": "%"},
+                        {"label": "Newsletter", "value": 15, "unit": "%"},
+                    ],
+                },
+                "source_hints": ["Accessibility review"],
+            }
+        )
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.chart_spec["chart_family"], "donut")
+        self.assertIn(result.chart_spec["style_spec"]["pattern_policy"]["reason"], {"explicit_dot", "accessibility"})
+        self.assertGreaterEqual(result.render_svg.count('<pattern id="cg-pattern-donut-'), 4)
+        self.assertTrue('width="24.00"' in result.render_svg or 'width="18.00"' in result.render_svg)
+
     def test_build_chart_artifacts_applies_outline_only_fill_treatment_for_preliminary_bar(self) -> None:
         result = build_chart_artifacts(
             {

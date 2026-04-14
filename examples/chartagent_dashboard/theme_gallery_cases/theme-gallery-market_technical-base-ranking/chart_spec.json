@@ -5,7 +5,7 @@
   "chart_variant": "ranking",
   "title_mode": "question_first",
   "title_text": "어떤 채널이 다음 분기 성장을 주도할까?",
-  "subtitle_text": "label value list normalized dataset · unit: pt",
+  "subtitle_text": "단위: pt",
   "annotation_strategy": "highlight_top_rank",
   "label_strategy": "long_labels_left",
   "legend_strategy": "none",

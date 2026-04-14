@@ -5,7 +5,7 @@
   "chart_variant": "bar_callout",
   "title_mode": "goal_first",
   "title_text": "Show Ranking",
-  "subtitle_text": "label value list normalized dataset",
+  "subtitle_text": "",
   "annotation_strategy": "essential_callout",
   "label_strategy": "callout_with_short_labels",
   "legend_strategy": "implicit",

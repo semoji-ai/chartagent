@@ -18,8 +18,14 @@ def write_chartagent_dashboard(
 ) -> dict[str, Any]:
     output_dir = Path(output_dir).expanduser().resolve()
     cases_dir = output_dir / "cases"
+    theme_docs_dir = output_dir / "theme_docs"
     output_dir.mkdir(parents=True, exist_ok=True)
+    if cases_dir.exists():
+        shutil.rmtree(cases_dir)
     cases_dir.mkdir(parents=True, exist_ok=True)
+    if theme_docs_dir.exists():
+        shutil.rmtree(theme_docs_dir)
+    theme_docs_dir.mkdir(parents=True, exist_ok=True)
 
     tasks = list(sample_tasks or _default_sample_tasks())
     if sample_tasks is None:
@@ -56,14 +62,15 @@ def write_chartagent_dashboard(
             }
         )
 
+    dashboard_reference_data = _build_dashboard_reference_sections(output_dir=output_dir)
     theme_gallery_data = _build_theme_gallery_sections(output_dir=output_dir)
     index_html = _build_dashboard_html(
         cases=rendered_cases,
         family_counter=family_counter,
         theme_set_counter=theme_set_counter,
         warning_count=warning_count,
-        theme_sections=theme_gallery_data["sections"],
-        theme_gallery_variants=theme_gallery_data["variants"],
+        theme_sections=dashboard_reference_data["sections"],
+        pattern_options=dashboard_reference_data["pattern_options"],
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_html, encoding="utf-8")
@@ -83,6 +90,8 @@ def write_chartagent_dashboard(
         "theme_gallery_case_count": theme_gallery_data["case_count"],
         "theme_gallery_themes": theme_gallery_data["themes"],
         "theme_gallery_variants": theme_gallery_data["variants"],
+        "dashboard_reference_case_count": dashboard_reference_data["case_count"],
+        "dashboard_pattern_options": [item["key"] for item in dashboard_reference_data["pattern_options"]],
     }
     (output_dir / "dashboard_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),
@@ -112,6 +121,8 @@ def _write_case_artifacts(case_dir: Path, result: Any) -> None:
 def _build_theme_gallery_sections(output_dir: Path) -> dict[str, Any]:
     gallery_dir = output_dir / "theme_gallery_cases"
     theme_docs_dir = output_dir / "theme_docs"
+    if gallery_dir.exists():
+        shutil.rmtree(gallery_dir)
     gallery_dir.mkdir(parents=True, exist_ok=True)
     theme_docs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -167,6 +178,70 @@ def _build_theme_gallery_sections(output_dir: Path) -> dict[str, Any]:
     }
 
 
+def _build_dashboard_reference_sections(output_dir: Path) -> dict[str, Any]:
+    gallery_dir = output_dir / "dashboard_reference_cases"
+    theme_docs_dir = output_dir / "theme_docs"
+    if gallery_dir.exists():
+        shutil.rmtree(gallery_dir)
+    gallery_dir.mkdir(parents=True, exist_ok=True)
+    theme_docs_dir.mkdir(parents=True, exist_ok=True)
+
+    pattern_options = _dashboard_pattern_options()
+    base_variant = _theme_gallery_variants()[0]
+    rendered_sections: list[dict[str, Any]] = []
+    case_count = 0
+    for theme_set in _theme_gallery_theme_sets():
+        theme_spec = get_theme_set_spec(theme_set)
+        theme_doc_source = _theme_doc_source_path(theme_set)
+        theme_doc_relpath = None
+        if theme_doc_source.exists():
+            theme_doc_target = theme_docs_dir / theme_doc_source.name
+            shutil.copyfile(theme_doc_source, theme_doc_target)
+            theme_doc_relpath = f"theme_docs/{theme_doc_target.name}"
+        variant_cases: list[dict[str, Any]] = []
+        for task in _dashboard_reference_sample_tasks(theme_set, base_variant):
+            task_payload = dict(task)
+            pattern_option = str(task_payload.pop("_dashboard_pattern_option", "fill"))
+            pattern_label = _dashboard_pattern_option_label(pattern_option)
+            slug = _slugify(str(task_payload.get("task_id") or f"{theme_set}-dashboard-reference"))
+            case_dir = gallery_dir / slug
+            case_dir.mkdir(parents=True, exist_ok=True)
+            (case_dir / "chart_task.json").write_text(
+                json.dumps(task_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            result = build_chart_artifacts(task_payload)
+            _write_case_artifacts(case_dir=case_dir, result=result)
+            variant_cases.append(
+                {
+                    "slug": slug,
+                    "task": task_payload,
+                    "case_dir": case_dir,
+                    "result": result,
+                    "variant_key": str(base_variant["key"]),
+                    "variant_label": str(base_variant["label"]),
+                    "pattern_option": pattern_option,
+                    "pattern_option_label": pattern_label,
+                }
+            )
+            case_count += 1
+        rendered_sections.append(
+            {
+                "theme_set": theme_set,
+                "theme_spec": theme_spec,
+                "theme_doc_relpath": theme_doc_relpath,
+                "variants": [{"variant": base_variant, "cases": variant_cases}],
+            }
+        )
+
+    return {
+        "sections": rendered_sections,
+        "case_count": case_count,
+        "variants": [str(base_variant["key"])],
+        "pattern_options": pattern_options,
+    }
+
+
 def _compact_dashboard_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     compact: list[dict[str, Any]] = []
     seen_task_ids: set[str] = set()
@@ -188,34 +263,15 @@ def _build_dashboard_html(
     theme_set_counter: Counter[str],
     warning_count: int,
     theme_sections: list[dict[str, Any]],
-    theme_gallery_variants: list[str],
+    pattern_options: list[dict[str, Any]],
 ) -> str:
-    family_options = "".join(
-        f'<option value="{escape(family)}">{escape(family)} ({count})</option>'
-        for family, count in sorted(family_counter.items())
-    )
-    family_chips = "".join(
-        f'<span class="summary-chip"><strong>{escape(family)}</strong><span>{count}</span></span>'
-        for family, count in sorted(family_counter.items())
-    )
-    theme_set_options = "".join(
-        f'<option value="{escape(theme_set)}">{escape(theme_set)} ({count})</option>'
-        for theme_set, count in sorted(theme_set_counter.items())
-    )
-    theme_set_chips = "".join(
-        f'<span class="summary-chip"><strong>{escape(theme_set)}</strong><span>{count}</span></span>'
-        for theme_set, count in sorted(theme_set_counter.items())
-    )
-    case_cards = "".join(_build_case_card(case) for case in cases)
-    theme_lab_sections = "".join(
-        _build_theme_gallery_section(section, show_variant_controls=False)
-        for section in theme_sections
-    )
-    theme_lab_theme_options = "".join(
+    default_theme = str(theme_sections[0]["theme_set"]) if theme_sections else ""
+    default_pattern = str(pattern_options[0]["key"]) if pattern_options else "fill"
+    theme_options = "".join(
         f'<option value="{escape(str(section["theme_set"]))}">{escape(str(section["theme_spec"].get("label") or section["theme_set"]))}</option>'
         for section in theme_sections
     )
-    theme_lab_families = sorted(
+    reference_families = sorted(
         {
             str(case["result"].chart_spec.get("chart_family") or "invalid")
             for section in theme_sections
@@ -223,15 +279,33 @@ def _build_dashboard_html(
             for case in item["cases"]
         }
     )
-    theme_lab_family_options = "".join(
+    family_options = "".join(
         f'<option value="{escape(family)}">{escape(family)}</option>'
-        for family in theme_lab_families
+        for family in reference_families
     )
-    theme_lab_variant_buttons = "".join(
-        f'<button class="variant-button" type="button" data-global-variant="{escape(variant)}">{escape(variant)}</button>'
-        for variant in theme_gallery_variants
+    pattern_filter_options = "".join(
+        f'<option value="{escape(str(item["key"]))}">{escape(str(item["label"]))}</option>'
+        for item in pattern_options
     )
-    default_variant = theme_gallery_variants[0] if theme_gallery_variants else "base"
+    theme_briefs = "".join(_build_reference_theme_brief(section) for section in theme_sections)
+    reference_cards = "".join(
+        _build_reference_dashboard_card(section=section, case=case)
+        for section in theme_sections
+        for item in section["variants"]
+        for case in item["cases"]
+    )
+    summary_family_chips = "".join(
+        f'<span class="summary-chip"><strong>{escape(family)}</strong><span>{count}</span></span>'
+        for family, count in family_counter.most_common(4)
+    )
+    summary_theme_chips = "".join(
+        f'<span class="summary-chip"><strong>{escape(theme_set)}</strong><span>{count}</span></span>'
+        for theme_set, count in theme_set_counter.most_common(4)
+    )
+    resource_links = "".join(
+        f'<a class="resource-link" href="./cases/{escape(str(case["slug"]))}/render.svg">{escape(str(case["title"]))}</a>'
+        for case in cases[:6]
+    )
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -262,17 +336,26 @@ def _build_dashboard_html(
       font-family: "Space Grotesk", "Pretendard", "Apple SD Gothic Neo", sans-serif;
     }}
     .page {{
-      width: min(1420px, calc(100vw - 32px));
+      width: min(1720px, calc(100vw - 32px));
       margin: 24px auto 48px;
+      display: grid;
+      gap: 24px;
     }}
     .hero {{
       display: grid;
-      gap: 16px;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
+      gap: 18px;
       padding: 28px;
       border: 1px solid var(--line);
       border-radius: 28px;
       background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.78));
       box-shadow: var(--shadow);
+    }}
+    .hero-main,
+    .hero-side {{
+      display: grid;
+      gap: 14px;
+      align-content: start;
     }}
     .eyebrow {{
       color: var(--accent);
@@ -317,11 +400,10 @@ def _build_dashboard_html(
       font-size: 14px;
       font-weight: 800;
     }}
-    .lab-shell,
-    .audit-shell {{
+    .workspace-shell,
+    .resource-shell {{
       display: grid;
       gap: 16px;
-      margin-top: 24px;
       padding: 20px;
       border: 1px solid var(--line);
       border-radius: 26px;
@@ -345,25 +427,15 @@ def _build_dashboard_html(
       font-size: 15px;
       line-height: 1.6;
     }}
-    .lab-toolbar {{
+    .workspace-toolbar {{
       display: grid;
-      grid-template-columns: minmax(0, 220px) minmax(0, 220px) minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 260px) minmax(0, 200px) minmax(0, 200px) auto;
       gap: 12px;
       align-items: end;
       padding: 14px;
       border: 1px solid var(--line);
       border-radius: 22px;
       background: rgba(255,255,255,0.82);
-    }}
-    .toolbar {{
-      display: grid;
-      grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto auto;
-      gap: 12px;
-      align-items: center;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      background: rgba(255,255,255,0.8);
     }}
     .control {{
       display: grid;
@@ -388,39 +460,15 @@ def _build_dashboard_html(
       color: var(--ink);
       font: 500 15px/1.2 "Space Grotesk", "Pretendard", "Apple SD Gothic Neo", sans-serif;
     }}
-    .variant-controls {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-    }}
-    .variant-button {{
+    .summary-chip {{
       display: inline-flex;
+      gap: 10px;
       align-items: center;
       padding: 10px 14px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: rgba(255,255,255,0.96);
-      color: var(--ink);
-      font-size: 13px;
-      font-weight: 800;
-      cursor: pointer;
-    }}
-    .variant-button.active {{
-      background: #18212f;
-      color: #ffffff;
-      border-color: #18212f;
-    }}
-    .toggle {{
-      display: inline-flex;
-      gap: 10px;
-      align-items: center;
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: rgba(255,255,255,0.96);
+      background: var(--panel-strong);
       font-size: 14px;
-      font-weight: 700;
     }}
     .visible-count {{
       display: inline-flex;
@@ -434,57 +482,58 @@ def _build_dashboard_html(
       font-size: 14px;
       font-weight: 800;
     }}
-    .summary-chip {{
-      display: inline-flex;
-      gap: 10px;
-      align-items: center;
-      padding: 10px 14px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--panel-strong);
-      font-size: 14px;
-    }}
-    .theme-lab {{
-      display: grid;
-      gap: 18px;
-    }}
-    .theme-section {{
+    .workspace-stage,
+    .theme-brief-strip {{
       display: grid;
       gap: 14px;
-      padding: 18px;
+    }}
+    .theme-brief {{
+      display: grid;
+      gap: 14px;
+      padding: 16px 18px;
       border: 1px solid var(--line);
       border-radius: 24px;
       background: rgba(255,255,255,0.9);
     }}
-    .theme-section[hidden] {{
+    .theme-brief[hidden] {{
       display: none;
     }}
-    .theme-header {{
+    .theme-brief-top {{
       display: grid;
       gap: 10px;
     }}
-    .theme-topline {{
+    .theme-brief-kicker {{
+      margin: 0;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }}
+    .theme-brief-title {{
+      margin: 0;
+      font-size: 1.5rem;
+      line-height: 1;
+    }}
+    .theme-brief-copy {{
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+    }}
+    .theme-brief-meta,
+    .theme-brief-signatures,
+    .resource-links,
+    .reference-notes,
+    .detail-metadata,
+    .detail-links {{
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      align-items: center;
-      justify-content: space-between;
     }}
-    .theme-title {{
-      margin: 0;
-      font-size: 1.35rem;
-      line-height: 1.05;
-    }}
-    .theme-meta,
-    .signature-list,
-    .chart-notes,
-    .footer-links {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }}
+    .meta-pill,
+    .note-pill,
     .signature,
-    .chart-note {{
+    .resource-link {{
       display: inline-flex;
       align-items: center;
       padding: 7px 10px;
@@ -495,12 +544,16 @@ def _build_dashboard_html(
       font-size: 12px;
       font-weight: 700;
     }}
-    .theme-grid {{
+    .resource-link {{
+      color: var(--accent);
+      text-decoration: none;
+    }}
+    .reference-grid {{
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 16px;
     }}
-    .chart-card {{
+    .reference-card {{
       display: grid;
       gap: 12px;
       min-width: 0;
@@ -510,18 +563,29 @@ def _build_dashboard_html(
       background:
         radial-gradient(circle at top left, rgba(37,99,235,0.04), transparent 24%),
         linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.94));
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
     }}
-    .chart-card[hidden] {{
+    .reference-card:hover {{
+      transform: translateY(-2px);
+      border-color: rgba(15,118,110,0.34);
+      box-shadow: 0 14px 30px rgba(24,33,47,0.10);
+    }}
+    .reference-card.active {{
+      border-color: rgba(15,118,110,0.48);
+      box-shadow: 0 18px 32px rgba(15,118,110,0.12);
+    }}
+    .reference-card[hidden] {{
       display: none;
     }}
-    .chart-header {{
+    .reference-card-top {{
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       align-items: baseline;
       justify-content: space-between;
     }}
-    .chart-title {{
+    .reference-card-title {{
       margin: 0;
       font-size: 1rem;
       line-height: 1.2;
@@ -538,90 +602,8 @@ def _build_dashboard_html(
       letter-spacing: 0.04em;
       text-transform: uppercase;
     }}
-    .cases {{
-      display: grid;
-      gap: 24px;
-    }}
-    .case {{
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 16px;
-      padding: 20px;
-      border: 1px solid var(--line);
-      border-radius: 26px;
-      background: var(--panel);
-      box-shadow: var(--shadow);
-    }}
-    .case-main {{
-      display: grid;
-      gap: 16px;
-      min-width: 0;
-    }}
-    .case-header {{
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: baseline;
-    }}
-    .case-title {{
-      margin: 0;
-      font-size: 1.45rem;
-      line-height: 1.15;
-    }}
-    .badges {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }}
-    .badge {{
-      display: inline-flex;
-      align-items: center;
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: #eef2ff;
-      color: #3730a3;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-    }}
-    .badge.warning {{
-      background: #fee2e2;
-      color: var(--warning);
-    }}
-    .badge.base {{
-      background: #ecfeff;
-      color: #155e75;
-    }}
-    .badge.theme {{
-      background: #fef3c7;
-      color: #92400e;
-    }}
-    .badge.mode {{
-      background: #ede9fe;
-      color: #6d28d9;
-    }}
-    .badge.layout {{
-      background: #dcfce7;
-      color: #166534;
-    }}
-    .badge.reference {{
-      background: #fce7f3;
-      color: #9d174d;
-    }}
-    .badge.combo {{
-      background: #ede9fe;
-      color: #5b21b6;
-    }}
-    .badge.pattern {{
-      background: #ecfccb;
-      color: #3f6212;
-    }}
-    .badge.theme-set {{
-      background: #ede9fe;
-      color: #6d28d9;
-    }}
-    .viz-frame {{
+    .reference-preview,
+    .detail-preview {{
       padding: 18px;
       border: 1px solid var(--line);
       border-radius: 20px;
@@ -629,45 +611,98 @@ def _build_dashboard_html(
         radial-gradient(circle at top left, rgba(37,99,235,0.05), transparent 32%),
         linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.92));
       overflow: auto;
-      min-height: 360px;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
     }}
-    .viz-frame svg {{
+    .reference-preview {{
+      min-height: 240px;
+    }}
+    .detail-preview {{
+      min-height: 360px;
+    }}
+    .reference-preview svg,
+    .detail-preview svg {{
       display: block;
       width: 100%;
       height: auto;
-      min-width: 320px;
+      min-width: 260px;
     }}
-    .meta-strip {{
+    .detail-modal {{
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      padding: 28px;
+      background: rgba(24,33,47,0.58);
+      backdrop-filter: blur(8px);
+      z-index: 40;
+    }}
+    .detail-modal.open {{
+      display: grid;
+    }}
+    .detail-modal-panel {{
+      display: grid;
+      gap: 14px;
+      width: min(1320px, calc(100vw - 48px));
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: rgba(255,255,255,0.94);
+      box-shadow: 0 32px 80px rgba(24,33,47,0.28);
+    }}
+    .detail-modal-header {{
       display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
     }}
-    .meta-pill {{
+    .modal-close {{
       display: inline-flex;
-      gap: 8px;
       align-items: center;
-      padding: 8px 12px;
+      justify-content: center;
+      min-width: 42px;
+      height: 42px;
+      padding: 0 14px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: rgba(255,255,255,0.88);
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--muted);
+      background: rgba(255,255,255,0.96);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
     }}
-    .grid {{
+    .detail-placeholder {{
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+    }}
+    .detail-body {{
+      display: grid;
+      gap: 12px;
+    }}
+    .detail-title {{
+      margin: 0;
+      font-size: 1.5rem;
+      line-height: 1.05;
+    }}
+    .detail-copy {{
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+    }}
+    .detail-grid {{
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }}
-    .panel {{
+    .detail-block {{
       padding: 14px 16px;
       border: 1px solid var(--line);
       border-radius: 18px;
       background: var(--panel-strong);
     }}
-    .panel h3 {{
+    .detail-block h4 {{
       margin: 0 0 8px;
       font-size: 13px;
       font-weight: 800;
@@ -675,63 +710,12 @@ def _build_dashboard_html(
       text-transform: uppercase;
       color: var(--accent-2);
     }}
-    .list {{
+    .detail-list {{
       margin: 0;
       padding-left: 18px;
       color: var(--muted);
       line-height: 1.5;
       font-size: 14px;
-    }}
-    .code {{
-      margin: 0;
-      padding: 14px;
-      border-radius: 18px;
-      background: #141923;
-      color: #f8fafc;
-      overflow: auto;
-      font: 12px/1.5 "SFMono-Regular", "JetBrains Mono", monospace;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }}
-    .details-panel {{
-      padding: 0;
-      overflow: hidden;
-    }}
-    .details-panel summary {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 14px 16px;
-      cursor: pointer;
-      list-style: none;
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--accent-2);
-    }}
-    .details-panel summary::-webkit-details-marker {{
-      display: none;
-    }}
-    .details-panel .details-body {{
-      padding: 0 14px 14px;
-    }}
-    .details-grid {{
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-    }}
-    .footer-links {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }}
-    .footer-links a {{
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 700;
-      font-size: 13px;
     }}
     .empty-state {{
       display: none;
@@ -748,251 +732,433 @@ def _build_dashboard_html(
       display: block;
     }}
     @media (max-width: 1100px) {{
-      .theme-grid,
-      .details-grid {{
+      .detail-grid {{
         grid-template-columns: 1fr;
       }}
-      .lab-toolbar {{
+      .hero {{
+        grid-template-columns: 1fr;
+      }}
+      .workspace-toolbar {{
         grid-template-columns: 1fr 1fr;
       }}
-      .toolbar {{
-        grid-template-columns: 1fr 1fr;
+    }}
+    @media (max-width: 1450px) {{
+      .reference-grid {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }}
     }}
     @media (max-width: 720px) {{
       .page {{ width: min(100vw - 18px, 100%); margin: 10px auto 36px; }}
-      .hero, .case {{ padding: 14px; border-radius: 20px; }}
-      .grid, .theme-grid, .details-grid {{ grid-template-columns: 1fr; }}
-      .lab-toolbar,
-      .toolbar {{ grid-template-columns: 1fr; }}
-      .viz-frame {{ min-height: 320px; padding: 14px; }}
+      .hero,
+      .workspace-shell,
+      .resource-shell,
+      .theme-brief {{ padding: 14px; border-radius: 20px; }}
+      .workspace-toolbar {{ grid-template-columns: 1fr; }}
+      .detail-grid,
+      .reference-grid {{ grid-template-columns: 1fr; }}
+      .reference-preview,
+      .detail-preview {{ min-height: 300px; padding: 14px; }}
+      .detail-modal {{ padding: 12px; }}
+      .detail-modal-panel {{ width: calc(100vw - 24px); max-height: calc(100vh - 24px); padding: 14px; }}
     }}
   </style>
 </head>
 <body>
   <main class="page">
     <section class="hero">
-      <div class="eyebrow">ChartAgent Style Lab</div>
-      <h1>theme_set과 variant를 먼저 바꾸고 chart family별 결과를 바로 비교</h1>
-      <p class="lede">
-        메인 화면은 style lab이다. theme_set, variant, chart family를 먼저 고르고 바로 SVG surface language를 비교한다.
-        static audit는 아래에 압축해서 두고, raw task/spec/dataset은 필요할 때만 펼쳐 확인한다.
-      </p>
-      <div class="summary">
-        <span class="summary-chip"><strong>lab themes</strong><span>{len(theme_sections)}</span></span>
-        <span class="summary-chip"><strong>lab families</strong><span>{len(theme_lab_families)}</span></span>
-        <span class="summary-chip"><strong>audit cases</strong><span>{len(cases)}</span></span>
-        <span class="summary-chip"><strong>warnings</strong><span>{warning_count}</span></span>
-        {family_chips}
-        {theme_set_chips}
+      <div class="hero-main">
+        <div class="eyebrow">ChartAgent Reference Workspace</div>
+        <h1>기준차트 9종을 한 화면에서 보고, theme_set과 pattern treatment만 바꾸는 대시보드</h1>
+        <p class="lede">
+          메인 대시보드는 audit wall이 아니라 reference stage다. 기준차트 9종을 고정하고 theme_set과 pattern treatment만 바꾸면서
+          같은 구조 위에 시각 언어가 어떻게 달라지는지 본다. 상세는 카드 클릭 시 모달에서만 확인한다.
+        </p>
       </div>
-      <div class="hero-links">
-        <a class="hero-link" href="./theme_gallery.html">Open dedicated theme gallery</a>
+      <div class="hero-side">
+        <div class="summary">
+          <span class="summary-chip"><strong>themes</strong><span>{len(theme_sections)}</span></span>
+          <span class="summary-chip"><strong>reference families</strong><span>{len(reference_families)}</span></span>
+          <span class="summary-chip"><strong>audit bundles</strong><span>{len(cases)}</span></span>
+          <span class="summary-chip"><strong>warnings</strong><span>{warning_count}</span></span>
+          {summary_family_chips}
+          {summary_theme_chips}
+        </div>
+        <div class="hero-links">
+          <a class="hero-link" href="./theme_gallery.html">Open dedicated theme gallery</a>
+          <a class="hero-link" href="./dashboard_manifest.json">Open dashboard manifest</a>
+        </div>
       </div>
     </section>
-    <section class="lab-shell">
+    <section class="workspace-shell">
       <header class="section-header">
-        <h2 class="section-title">Theme Lab</h2>
+        <h2 class="section-title">Reference Grid</h2>
         <p class="section-copy">
-          같은 theme_set이 bar, line, share, comparison table, metric wall, single stat, fact table까지 얼마나 일관되게 유지되는지 본다.
-          여기서는 variant를 전역으로 바꿔 surface language를 빠르게 비교한다.
+          기준차트 세트는 horizontal ranking, vertical bar, trend, share, contribution, comparison table, metric wall, single stat, fact table의 9종으로 고정한다.
+          `theme_set`과 `pattern treatment`만 바꿔가며 같은 세트 전체에 스타일이 어떻게 덮이는지 바로 확인한다.
         </p>
       </header>
-      <div class="lab-toolbar">
+      <div class="workspace-toolbar">
         <div class="control">
-          <label for="lab-theme-filter">Theme Set</label>
-          <select id="lab-theme-filter">
-            <option value="all">all theme sets</option>
-            {theme_lab_theme_options}
+          <label for="reference-theme-select">Theme Set</label>
+          <select id="reference-theme-select">
+            {theme_options}
           </select>
         </div>
         <div class="control">
-          <label for="lab-family-filter">Chart Family</label>
-          <select id="lab-family-filter">
-            <option value="all">all families</option>
-            {theme_lab_family_options}
-          </select>
-        </div>
-        <div class="control">
-          <label>Variant</label>
-          <div class="variant-controls">
-            {theme_lab_variant_buttons}
-          </div>
-        </div>
-        <div class="visible-count">
-          <span>themes</span>
-          <span id="lab-visible-theme-count">{len(theme_sections)}</span>
-        </div>
-        <div class="visible-count">
-          <span>previews</span>
-          <span id="lab-visible-card-count">{len(theme_sections) * max(len(theme_lab_families), 1)}</span>
-        </div>
-      </div>
-      <div class="theme-lab">
-        {theme_lab_sections}
-      </div>
-      <div id="lab-empty-state" class="empty-state">No matching theme previews for the current style lab filter.</div>
-    </section>
-    <section class="audit-shell">
-      <header class="section-header">
-        <h2 class="section-title">Static Audit</h2>
-        <p class="section-copy">
-          representative tasks에서 family 선택, warning, annotation, raw artifacts를 빠르게 점검한다.
-          중복 theme study case는 메인 audit에서 제외했다.
-        </p>
-      </header>
-      <div class="toolbar">
-        <div class="control">
-          <label for="family-filter">Family</label>
-          <select id="family-filter">
+          <label for="reference-family-filter">Reference Family</label>
+          <select id="reference-family-filter">
             <option value="all">all families</option>
             {family_options}
           </select>
         </div>
         <div class="control">
-          <label for="theme-set-filter">Theme Set</label>
-          <select id="theme-set-filter">
-            <option value="all">all theme sets</option>
-            {theme_set_options}
+          <label for="reference-pattern-filter">Pattern Treatment</label>
+          <select id="reference-pattern-filter">
+            {pattern_filter_options}
           </select>
         </div>
-        <div class="control">
-          <label for="case-search">Search</label>
-          <input id="case-search" type="search" placeholder="title, family, warning, annotation..." />
-        </div>
-        <label class="toggle" for="warning-only-toggle">
-          <input id="warning-only-toggle" type="checkbox" />
-          warning only
-        </label>
         <div class="visible-count">
           <span>visible</span>
-          <span id="visible-case-count">{len(cases)}</span>
+          <span id="reference-visible-count">9</span>
         </div>
       </div>
-      <section class="cases">
-        {case_cards}
+      <section class="workspace-stage">
+        <div class="theme-brief-strip">
+          {theme_briefs}
+        </div>
+        <section class="reference-stage">
+          <div id="reference-grid" class="reference-grid">
+            {reference_cards}
+          </div>
+          <div id="reference-empty-state" class="empty-state">No matching reference charts for the current theme, family, and pattern selection.</div>
+        </section>
       </section>
-      <div id="empty-state" class="empty-state">No matching cases for the current filter.</div>
     </section>
+    <section class="resource-shell">
+      <header class="section-header">
+        <h2 class="section-title">Browse Raw Bundles</h2>
+        <p class="section-copy">
+          전체 audit artifact는 계속 생성한다. 다만 메인 화면을 차지하지 않도록 여기서는 대표 bundle 링크만 짧게 노출한다.
+        </p>
+      </header>
+      <div class="resource-links">
+        <a class="resource-link" href="./theme_gallery.html">Full theme gallery</a>
+        <a class="resource-link" href="./dashboard_manifest.json">dashboard_manifest.json</a>
+        {resource_links}
+      </div>
+    </section>
+    <div id="reference-detail-modal" class="detail-modal" aria-hidden="true">
+      <section id="reference-detail-panel" class="detail-modal-panel" role="dialog" aria-modal="true" aria-labelledby="reference-modal-title">
+        <div class="detail-modal-header">
+          <div>
+            <p class="theme-brief-kicker">Chart Detail</p>
+            <h3 id="reference-modal-title" class="detail-title">Reference Chart Detail</h3>
+          </div>
+          <button id="reference-modal-close" class="modal-close" type="button" aria-label="Close detail modal">Close</button>
+        </div>
+        <div id="reference-detail-preview" class="detail-preview"></div>
+        <div id="reference-detail-body" class="detail-body">
+          <p class="detail-placeholder">카드를 클릭하면 여기에 큰 미리보기와 선택된 카드의 이유, 경고, artifact 링크가 표시된다.</p>
+        </div>
+      </section>
+    </div>
   </main>
   <script>
     (() => {{
       const params = new URLSearchParams(window.location.search);
-      const labThemeFilter = document.getElementById("lab-theme-filter");
-      const labFamilyFilter = document.getElementById("lab-family-filter");
-      const labVisibleThemeCount = document.getElementById("lab-visible-theme-count");
-      const labVisibleCardCount = document.getElementById("lab-visible-card-count");
-      const labEmptyState = document.getElementById("lab-empty-state");
-      const labSections = Array.from(document.querySelectorAll(".theme-section"));
-      const globalVariantButtons = Array.from(document.querySelectorAll("[data-global-variant]"));
-      let activeVariant = params.get("variant") || "{escape(default_variant)}";
+      const themeSelect = document.getElementById("reference-theme-select");
+      const familyFilter = document.getElementById("reference-family-filter");
+      const patternFilter = document.getElementById("reference-pattern-filter");
+      const visibleCount = document.getElementById("reference-visible-count");
+      const emptyState = document.getElementById("reference-empty-state");
+      const modal = document.getElementById("reference-detail-modal");
+      const detailPreview = document.getElementById("reference-detail-preview");
+      const detailBody = document.getElementById("reference-detail-body");
+      const modalTitle = document.getElementById("reference-modal-title");
+      const modalClose = document.getElementById("reference-modal-close");
+      const cards = Array.from(document.querySelectorAll("[data-reference-card]"));
+      const themeBriefs = Array.from(document.querySelectorAll("[data-theme-summary]"));
+      let activeCard = null;
 
-      const applyLabFilters = () => {{
-        const themeValue = labThemeFilter.value;
-        const familyValue = labFamilyFilter.value;
-        let visibleThemes = 0;
-        let visibleCards = 0;
-        labSections.forEach((section) => {{
-          const themeSet = section.dataset.themeSet || "";
-          const matchesTheme = themeValue === "all" || themeSet === themeValue;
-          let sectionVisibleCards = 0;
-          Array.from(section.querySelectorAll(".chart-card")).forEach((card) => {{
-            const matchesVariant = (card.dataset.variant || "base") === activeVariant;
-            const matchesFamily = familyValue === "all" || (card.dataset.family || "") === familyValue;
-            const show = matchesTheme && matchesVariant && matchesFamily;
-            card.hidden = !show;
-            if (show) {{
-              sectionVisibleCards += 1;
-            }}
-          }});
-          section.hidden = sectionVisibleCards == 0;
-          if (!section.hidden) {{
-            visibleThemes += 1;
-          }}
-          visibleCards += sectionVisibleCards;
+      const setThemeBrief = () => {{
+        const themeValue = themeSelect.value;
+        themeBriefs.forEach((brief) => {{
+          brief.hidden = brief.dataset.themeSummary !== themeValue;
         }});
-        labVisibleThemeCount.textContent = String(visibleThemes);
-        labVisibleCardCount.textContent = String(visibleCards);
-        labEmptyState.classList.toggle("active", visibleCards === 0);
       }};
 
-      const setGlobalVariant = (variant) => {{
-        activeVariant = variant;
-        globalVariantButtons.forEach((button) => {{
-          button.classList.toggle("active", button.dataset.globalVariant === variant);
-        }});
-        applyLabFilters();
+      const closeModal = () => {{
+        if (activeCard) {{
+          activeCard.classList.remove("active");
+          activeCard = null;
+        }}
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
       }};
 
-      if (params.has("theme")) {{
-        labThemeFilter.value = params.get("theme") || "all";
-      }}
-      if (params.has("lab_family")) {{
-        labFamilyFilter.value = params.get("lab_family") || "all";
-      }}
-      labThemeFilter.addEventListener("change", applyLabFilters);
-      labFamilyFilter.addEventListener("change", applyLabFilters);
-      globalVariantButtons.forEach((button) => {{
-        button.addEventListener("click", () => setGlobalVariant(button.dataset.globalVariant || "{escape(default_variant)}"));
-      }});
-      setGlobalVariant(activeVariant);
+      const openModal = (card) => {{
+        if (activeCard) {{
+          activeCard.classList.remove("active");
+        }}
+        activeCard = card;
+        if (!card) {{
+          closeModal();
+          return;
+        }}
+        card.classList.add("active");
+        const preview = card.querySelector(".reference-preview");
+        const template = card.querySelector(".reference-detail-template");
+        modalTitle.textContent = card.dataset.title || "Reference Chart Detail";
+        detailPreview.innerHTML = preview ? preview.innerHTML : "<div>No SVG output</div>";
+        detailBody.innerHTML = template ? template.innerHTML : "";
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+      }};
 
-      const familyFilter = document.getElementById("family-filter");
-      const themeSetFilter = document.getElementById("theme-set-filter");
-      const warningOnlyToggle = document.getElementById("warning-only-toggle");
-      const caseSearch = document.getElementById("case-search");
-      const cards = Array.from(document.querySelectorAll(".case"));
-      const visibleCaseCount = document.getElementById("visible-case-count");
-      const emptyState = document.getElementById("empty-state");
-
-      if (params.has("family")) {{
-        familyFilter.value = params.get("family") || "all";
-      }}
-      if (params.has("theme_set")) {{
-        themeSetFilter.value = params.get("theme_set") || "all";
-      }}
-      if (params.has("warning_only")) {{
-        warningOnlyToggle.checked = params.get("warning_only") === "true";
-      }}
-      if (params.has("search")) {{
-        caseSearch.value = params.get("search") || "";
-      }}
-
-      const applyFilters = () => {{
+      const applyReferenceFilters = () => {{
+        const themeValue = themeSelect.value;
         const familyValue = familyFilter.value;
-        const themeSetValue = themeSetFilter.value;
-        const warningOnly = warningOnlyToggle.checked;
-        const searchValue = caseSearch.value.trim().toLowerCase();
+        const patternValue = patternFilter.value;
         let visible = 0;
-
         cards.forEach((card) => {{
-          const family = card.dataset.family || "";
-          const themeSet = card.dataset.themeSet || "";
-          const hasWarnings = card.dataset.hasWarnings === "true";
-          const searchText = (card.dataset.search || "").toLowerCase();
-          const matchesFamily = familyValue === "all" || family === familyValue;
-          const matchesThemeSet = themeSetValue === "all" || themeSet === themeSetValue;
-          const matchesWarning = !warningOnly || hasWarnings;
-          const matchesSearch = !searchValue || searchText.includes(searchValue);
-          const show = matchesFamily && matchesThemeSet && matchesWarning && matchesSearch;
+          const matchesTheme = (card.dataset.themeSet || "") === themeValue;
+          const matchesFamily = familyValue === "all" || (card.dataset.family || "") === familyValue;
+          const matchesPattern = (card.dataset.patternOption || "") === patternValue;
+          const show = matchesTheme && matchesFamily && matchesPattern;
           card.hidden = !show;
-          if (show) visible += 1;
+          if (show) {{
+            visible += 1;
+          }}
         }});
-
-        visibleCaseCount.textContent = String(visible);
+        visibleCount.textContent = String(visible);
         emptyState.classList.toggle("active", visible === 0);
+        setThemeBrief();
+        if (activeCard && activeCard.hidden) {{
+          closeModal();
+        }}
       }};
 
-      familyFilter.addEventListener("change", applyFilters);
-      themeSetFilter.addEventListener("change", applyFilters);
-      warningOnlyToggle.addEventListener("change", applyFilters);
-      caseSearch.addEventListener("input", applyFilters);
-      applyFilters();
+      if (themeSelect.value === "") {{
+        themeSelect.value = "{escape(default_theme)}";
+      }}
+      if (params.has("theme")) {{
+        const themeValue = params.get("theme") || "{escape(default_theme)}";
+        if (Array.from(themeSelect.options).some((option) => option.value === themeValue)) {{
+          themeSelect.value = themeValue;
+        }}
+      }}
+      if (params.has("family")) {{
+        const familyValue = params.get("family") || "all";
+        if (Array.from(familyFilter.options).some((option) => option.value === familyValue)) {{
+          familyFilter.value = familyValue;
+        }}
+      }}
+      if (params.has("pattern")) {{
+        const patternValue = params.get("pattern") || "{escape(default_pattern)}";
+        if (Array.from(patternFilter.options).some((option) => option.value === patternValue)) {{
+          patternFilter.value = patternValue;
+        }}
+      }}
+      if (!patternFilter.value) {{
+        patternFilter.value = "{escape(default_pattern)}";
+      }}
+
+      themeSelect.addEventListener("change", applyReferenceFilters);
+      familyFilter.addEventListener("change", applyReferenceFilters);
+      patternFilter.addEventListener("change", applyReferenceFilters);
+      cards.forEach((card) => {{
+        card.addEventListener("click", () => openModal(card));
+        card.addEventListener("keydown", (event) => {{
+          if (event.key === "Enter" || event.key === " ") {{
+            event.preventDefault();
+            openModal(card);
+          }}
+        }});
+      }});
+      modalClose.addEventListener("click", closeModal);
+      modal.addEventListener("click", (event) => {{
+        if (event.target === modal) {{
+          closeModal();
+        }}
+      }});
+      document.addEventListener("keydown", (event) => {{
+        if (event.key === "Escape") {{
+          closeModal();
+        }}
+      }});
+
+      applyReferenceFilters();
     }})();
   </script>
 </body>
 </html>
 """
+
+
+def _build_reference_theme_brief(section: dict[str, Any]) -> str:
+    theme_set = str(section["theme_set"])
+    theme_spec = section["theme_spec"]
+    label = str(theme_spec.get("label") or theme_set)
+    description = str(theme_spec.get("description") or "")
+    theme_name = str(theme_spec.get("theme_name") or "unknown")
+    combo = str(theme_spec.get("style_combo_preset") or "unknown")
+    pattern = str(theme_spec.get("pattern_format_preset") or "unknown")
+    signatures = "".join(
+        f'<span class="signature">{escape(str(item))}</span>'
+        for item in (theme_spec.get("artwork_signature") or [])
+    )
+    source_refs = "".join(
+        f'<span class="signature">ref {escape(str(item))}</span>'
+        for item in (theme_spec.get("source_refs") or [])
+    )
+    doc_link = ""
+    if section.get("theme_doc_relpath"):
+        doc_link = (
+            f'<a class="resource-link" href="{escape(str(section["theme_doc_relpath"]))}" target="_blank" rel="noreferrer">'
+            "Open THEME.md"
+            "</a>"
+        )
+    return f"""
+    <article class="theme-brief" data-theme-summary="{escape(theme_set)}">
+      <div class="theme-brief-top">
+        <p class="theme-brief-kicker">Selected Theme</p>
+        <h3 class="theme-brief-title">{escape(label)}</h3>
+        <p class="theme-brief-copy">{escape(description)}</p>
+      </div>
+      <div class="theme-brief-meta">
+        <span class="meta-pill">theme_set <strong>{escape(theme_set)}</strong></span>
+        <span class="meta-pill">theme <strong>{escape(theme_name)}</strong></span>
+        <span class="meta-pill">combo <strong>{escape(combo)}</strong></span>
+        <span class="meta-pill">pattern <strong>{escape(pattern)}</strong></span>
+      </div>
+      <div class="theme-brief-signatures">{signatures}{source_refs}{doc_link}</div>
+    </article>
+    """
+
+
+def _build_reference_dashboard_card(
+    *,
+    section: dict[str, Any],
+    case: dict[str, Any],
+) -> str:
+    result = case["result"]
+    chart_spec = result.chart_spec or {}
+    theme_set = str(section["theme_set"])
+    theme_spec = section["theme_spec"]
+    pattern_option = str(case.get("pattern_option") or "fill")
+    pattern_option_label = str(case.get("pattern_option_label") or pattern_option)
+    family = str(chart_spec.get("chart_family") or "invalid")
+    title = str(chart_spec.get("title_text") or case["task"].get("question") or case["slug"])
+    question = str(case["task"].get("question") or title)
+    theme_label = str(theme_spec.get("label") or theme_set)
+    theme_name = str(theme_spec.get("theme_name") or "unknown")
+    combo = str(theme_spec.get("style_combo_preset") or "unknown")
+    pattern = str(theme_spec.get("pattern_format_preset") or "unknown")
+    why = [str(item) for item in (chart_spec.get("why") or [])]
+    warnings = [str(item) for item in (chart_spec.get("warnings") or [])]
+    annotations = chart_spec.get("annotations") or []
+    svg_markup = _namespace_inline_svg_ids(
+        result.render_svg or "<div>No SVG output</div>",
+        prefix=f"dashboard-reference-{case['slug']}",
+    )
+    note_bits = [
+        f"pattern {pattern_option_label}",
+        f"annotations {len(annotations)}",
+        f"warnings {len(warnings)}",
+    ]
+    if why:
+        note_bits.append(why[0])
+    notes = "".join(f'<span class="note-pill">{escape(bit)}</span>' for bit in note_bits)
+    why_items = "".join(f"<li>{escape(item)}</li>" for item in why) or "<li>none</li>"
+    warning_items = "".join(f"<li>{escape(item)}</li>" for item in warnings) or "<li>none</li>"
+    theme_signals = [
+        f"theme {theme_name}",
+        f"combo {combo}",
+        f"pattern {pattern}",
+    ]
+    if theme_spec.get("artwork_signature"):
+        theme_signals.append(
+            "artwork " + ", ".join(str(item) for item in (theme_spec.get("artwork_signature") or []))
+        )
+    if theme_spec.get("source_refs"):
+        theme_signals.append(
+            "refs " + ", ".join(str(item) for item in (theme_spec.get("source_refs") or []))
+        )
+    theme_signal_items = "".join(f"<li>{escape(item)}</li>" for item in theme_signals)
+    artifact_prefix = f"./dashboard_reference_cases/{case['slug']}"
+    detail_links = [
+        f'<a class="resource-link" href="{artifact_prefix}/chart_task.json">task</a>',
+        f'<a class="resource-link" href="{artifact_prefix}/dataset.normalized.json">dataset</a>',
+        f'<a class="resource-link" href="{artifact_prefix}/chart_spec.json">chart_spec</a>',
+        f'<a class="resource-link" href="{artifact_prefix}/render.svg">render.svg</a>',
+        f'<a class="resource-link" href="{artifact_prefix}/notes.md">notes</a>',
+    ]
+    if section.get("theme_doc_relpath"):
+        detail_links.append(
+            f'<a class="resource-link" href="{escape(str(section["theme_doc_relpath"]))}" target="_blank" rel="noreferrer">THEME.md</a>'
+        )
+    return f"""
+    <article
+      class="reference-card"
+      tabindex="0"
+      role="button"
+      data-reference-card
+      data-title="{escape(title)}"
+      data-theme-set="{escape(theme_set)}"
+      data-family="{escape(family)}"
+      data-pattern-option="{escape(pattern_option)}"
+    >
+      <div class="reference-card-top">
+        <h3 class="reference-card-title">{escape(title)}</h3>
+        <span class="family-pill">{escape(family)}</span>
+      </div>
+      <div class="reference-preview">{svg_markup}</div>
+      <div class="reference-notes">{notes}</div>
+      <template class="reference-detail-template">
+        <p class="theme-brief-kicker">Selected Detail</p>
+        <h3 class="detail-title">{escape(title)}</h3>
+        <p class="detail-copy">{escape(question)}</p>
+        <div class="detail-metadata">
+          <span class="meta-pill">theme_set <strong>{escape(theme_set)}</strong></span>
+          <span class="meta-pill">theme <strong>{escape(theme_label)}</strong></span>
+          <span class="meta-pill">pattern <strong>{escape(pattern_option_label)}</strong></span>
+          <span class="meta-pill">family <strong>{escape(family)}</strong></span>
+        </div>
+        <div class="detail-grid">
+          <section class="detail-block">
+            <h4>Why This Form</h4>
+            <ul class="detail-list">{why_items}</ul>
+          </section>
+          <section class="detail-block">
+            <h4>Warnings</h4>
+            <ul class="detail-list">{warning_items}</ul>
+          </section>
+          <section class="detail-block">
+            <h4>Theme Signals</h4>
+            <ul class="detail-list">{theme_signal_items}</ul>
+          </section>
+          <section class="detail-block">
+            <h4>Artifacts</h4>
+            <div class="detail-links">{''.join(detail_links)}</div>
+          </section>
+        </div>
+      </template>
+    </article>
+    """
+
+
+def _namespace_inline_svg_ids(svg_markup: str, *, prefix: str) -> str:
+    if "<svg" not in svg_markup or 'id="' not in svg_markup:
+        return svg_markup
+    namespaced = svg_markup
+    ids = sorted(set(re.findall(r'\bid="([^"]+)"', svg_markup)), key=len, reverse=True)
+    for raw_id in ids:
+        new_id = f"{prefix}-{raw_id}"
+        namespaced = re.sub(fr'(?<=id="){re.escape(raw_id)}(?=")', new_id, namespaced)
+        namespaced = namespaced.replace(f"url(#{raw_id})", f"url(#{new_id})")
+        namespaced = namespaced.replace(f'href="#{raw_id}"', f'href="#{new_id}"')
+        namespaced = namespaced.replace(f'xlink:href="#{raw_id}"', f'xlink:href="#{new_id}"')
+    return namespaced
 
 
 def _build_theme_gallery_html(sections: list[dict[str, Any]]) -> str:
@@ -1347,6 +1513,10 @@ def _build_theme_gallery_card(case: dict[str, Any]) -> str:
     chart_spec = result.chart_spec or {}
     family = str(chart_spec.get("chart_family") or "invalid")
     title = str(chart_spec.get("title_text") or case["task"].get("question") or case["slug"])
+    svg_markup = _namespace_inline_svg_ids(
+        result.render_svg or "<div>No SVG output</div>",
+        prefix=f"theme-gallery-{case['slug']}",
+    )
     why = chart_spec.get("why") or []
     annotations = chart_spec.get("annotations") or []
     note_bits = [
@@ -1372,7 +1542,7 @@ def _build_theme_gallery_card(case: dict[str, Any]) -> str:
         <h3 class="chart-title">{escape(title)} <span style="color:#64748b;font-weight:600;">· {escape(str(case['variant_label']))}</span></h3>
         <span class="family-pill">{escape(family)}</span>
       </div>
-      <div class="viz-frame">{result.render_svg or '<div>No SVG output</div>'}</div>
+      <div class="viz-frame">{svg_markup}</div>
       <div class="chart-notes">{notes}</div>
     </article>
     """
@@ -1416,7 +1586,10 @@ def _build_case_card(case: dict[str, Any]) -> str:
     task_json = json.dumps(case["task"], ensure_ascii=False, indent=2)
     spec_json = json.dumps(chart_spec, ensure_ascii=False, indent=2)
     dataset_json = json.dumps(result.dataset_normalized, ensure_ascii=False, indent=2)
-    svg_markup = result.render_svg or "<div>No SVG output</div>"
+    svg_markup = _namespace_inline_svg_ids(
+        result.render_svg or "<div>No SVG output</div>",
+        prefix=f"dashboard-case-{case['slug']}",
+    )
     slug = case["slug"]
     normalized_shape = str(result.dataset_normalized.get("shape") or "unknown")
     annotation_count = len(chart_spec.get("annotations") or [])
@@ -2099,6 +2272,487 @@ def _theme_gallery_variants() -> list[dict[str, Any]]:
             "theme_reset": {},
         },
     ]
+
+
+def _dashboard_pattern_options() -> list[dict[str, str]]:
+    return [
+        {"key": "fill", "label": "Fill"},
+        {"key": "hatch", "label": "Hatch"},
+        {"key": "dot", "label": "Dot"},
+    ]
+
+
+def _dashboard_pattern_option_label(option_key: str) -> str:
+    labels = {item["key"]: item["label"] for item in _dashboard_pattern_options()}
+    return labels.get(option_key, option_key)
+
+
+def _dashboard_reference_sample_tasks(theme_set: str, variant: dict[str, Any]) -> list[dict[str, Any]]:
+    variant_key = str(variant.get("key") or "base")
+    theme_overrides = dict(variant.get("theme_overrides") or {})
+    theme_reset = dict(variant.get("theme_reset") or {})
+    def make_task(
+        pattern_option: str,
+        task_suffix: str,
+        *,
+        goal: str,
+        question: str,
+        dataset: dict[str, Any],
+        source_hints: list[str],
+    ) -> dict[str, Any]:
+        return {
+            "_dashboard_pattern_option": pattern_option,
+            "task_id": f"dashboard-reference-{theme_set}-{variant_key}-{pattern_option}-{task_suffix}",
+            "goal": goal,
+            "question": question,
+            "theme_set": theme_set,
+            "theme_overrides": theme_overrides,
+            "theme_reset": theme_reset,
+            "dataset": dataset,
+            "source_hints": source_hints,
+        }
+
+    fill_tasks = [
+        make_task(
+            "fill",
+            "ranking",
+            goal="show ranking",
+            question="어떤 채널이 지금 가장 큰가?",
+            dataset={
+                "title": "채널 점유 점수",
+                "unit": "pt",
+                "items": [
+                    {"label": "Organic Search", "value": 42},
+                    {"label": "Enterprise Sales", "value": 31},
+                    {"label": "Lifecycle Email", "value": 21},
+                    {"label": "Partner Network", "value": 14},
+                ],
+            },
+            source_hints=["Reference gallery benchmark", "Channel mix model"],
+        ),
+        make_task(
+            "fill",
+            "vertical-bar",
+            goal="show category comparison",
+            question="지역별 실적을 세로 막대로 비교하라",
+            dataset={
+                "title": "지역별 분기 실적",
+                "unit": "억",
+                "items": [
+                    {"label": "KR", "value": 18},
+                    {"label": "US", "value": 24},
+                    {"label": "JP", "value": 13},
+                    {"label": "EU", "value": 20},
+                ],
+            },
+            source_hints=["Reference gallery benchmark", "Regional scorecard"],
+        ),
+        make_task(
+            "fill",
+            "trend",
+            goal="show trend",
+            question="수익 흐름은 어떻게 변했는가?",
+            dataset={
+                "title": "ARR 추이",
+                "x_label": "연도",
+                "y_label": "ARR",
+                "points": [
+                    {"x": "2021", "y": 12},
+                    {"x": "2022", "y": 19},
+                    {"x": "2023", "y": 31},
+                    {"x": "2024", "y": 46},
+                ],
+            },
+            source_hints=["Reference gallery benchmark", "Revenue trend model"],
+        ),
+        make_task(
+            "fill",
+            "share",
+            goal="show composition",
+            question="유입 비중은 어떻게 나뉘는가?",
+            dataset={
+                "title": "유입 비중",
+                "items": [
+                    {"label": "Organic", "value": 46, "unit": "%"},
+                    {"label": "Paid", "value": 28, "unit": "%"},
+                    {"label": "Partner", "value": 16, "unit": "%"},
+                    {"label": "Newsletter", "value": 10, "unit": "%"},
+                ],
+            },
+            source_hints=["Reference gallery benchmark", "Acquisition mix model"],
+        ),
+        make_task(
+            "fill",
+            "contribution",
+            goal="show stacked progress share",
+            question="누적 구성 바로 단계별 기여도를 보여라",
+            dataset={
+                "title": "성장 기여도",
+                "items": [
+                    {"label": "Acquisition", "value": 39, "unit": "%"},
+                    {"label": "Activation", "value": 27, "unit": "%"},
+                    {"label": "Expansion", "value": 21, "unit": "%"},
+                    {"label": "Referral", "value": 13, "unit": "%"},
+                ],
+            },
+            source_hints=["Reference gallery benchmark", "Growth funnel model"],
+        ),
+        make_task(
+            "fill",
+            "comparison",
+            goal="compare features",
+            question="세 플랜은 무엇이 다른가?",
+            dataset={
+                "title": "플랜 비교",
+                "headers": ["플랜", "월 요금", "AI 크레딧", "협업 좌석"],
+                "rows": [
+                    ["Starter", "9,900", "50", "1"],
+                    ["Pro", "24,900", "250", "5"],
+                    ["Scale", "59,000", "Unlimited", "20"],
+                ],
+            },
+            source_hints=["Reference gallery benchmark", "Pricing comparison"],
+        ),
+        make_task(
+            "fill",
+            "metric-wall",
+            goal="headline kpi summary",
+            question="핵심 KPI를 카드 벽으로 요약하라",
+            dataset={
+                "title": "핵심 KPI",
+                "items": [
+                    {"label": "ARR", "value": 128, "unit": "억"},
+                    {"label": "Gross Margin", "value": 71, "unit": "%"},
+                    {"label": "Active Seats", "value": 320, "unit": "만"},
+                ],
+            },
+            source_hints=["Reference gallery benchmark", "Executive KPI wall"],
+        ),
+        make_task(
+            "fill",
+            "single-stat",
+            goal="headline single stat",
+            question="하나의 핵심 숫자를 크게 강조하라",
+            dataset={
+                "title": "이번 분기 핵심 수치",
+                "label": "분기 ARR",
+                "value": 38,
+                "unit": "억",
+            },
+            source_hints=["Reference gallery benchmark", "Hero stat treatment"],
+        ),
+        make_task(
+            "fill",
+            "fact-table",
+            goal="fact lookup",
+            question="핵심 사실을 빠르게 읽게 하라",
+            dataset={
+                "title": "프로덕트 팩트",
+                "headers": ["항목", "값"],
+                "rows": [
+                    ["출시", "2021"],
+                    ["고객사", "2,400+"],
+                    ["시장", "B2B SaaS"],
+                ],
+            },
+            source_hints=["Reference gallery benchmark", "Fact lookup sheet"],
+        ),
+    ]
+
+    hatch_tasks = [
+        make_task(
+            "hatch",
+            "ranking",
+            goal="show forecast as outline hatch",
+            question="빗금 패턴으로 예상 채널을 비교하라",
+            dataset={
+                "title": "예상 채널 점유 점수",
+                "unit": "pt",
+                "items": [
+                    {"label": "Organic Search", "value": 44},
+                    {"label": "Enterprise Sales", "value": 34, "note": "Projected 2026 pipeline"},
+                    {"label": "Lifecycle Email", "value": 24},
+                    {"label": "Partner Network", "value": 18, "note": "Projected 2026 pipeline"},
+                ],
+            },
+            source_hints=["Pattern reference set", "Forecast visual test"],
+        ),
+        make_task(
+            "hatch",
+            "vertical-bar",
+            goal="show vertical forecast bars with hatch pattern",
+            question="빗금 패턴으로 지역별 실적을 세로 막대로 비교하라",
+            dataset={
+                "title": "지역별 예상 실적",
+                "unit": "억",
+                "items": [
+                    {"label": "KR", "value": 19},
+                    {"label": "US", "value": 27, "note": "Projected Q4"},
+                    {"label": "JP", "value": 15},
+                    {"label": "EU", "value": 22, "note": "Projected Q4"},
+                ],
+            },
+            source_hints=["Pattern reference set", "Regional planning board"],
+        ),
+        make_task(
+            "hatch",
+            "trend",
+            goal="show forecast trend reference",
+            question="예상 구간이 포함된 추세선을 기준세트로 유지하라",
+            dataset={
+                "title": "예상 ARR 추이",
+                "x_label": "연도",
+                "y_label": "ARR",
+                "points": [
+                    {"x": "2021", "y": 12},
+                    {"x": "2022", "y": 19},
+                    {"x": "2023", "y": 31},
+                    {"x": "2024", "y": 46},
+                ],
+            },
+            source_hints=["Pattern reference set", "Forecast trend model"],
+        ),
+        make_task(
+            "hatch",
+            "share",
+            goal="show composition with hatch pattern",
+            question="빗금 패턴으로 비중을 구분하라",
+            dataset={
+                "title": "유입 비중 패턴 테스트",
+                "items": [
+                    {"label": "Organic", "value": 42, "unit": "%"},
+                    {"label": "Paid", "value": 27, "unit": "%"},
+                    {"label": "Partner", "value": 19, "unit": "%"},
+                    {"label": "Newsletter", "value": 12, "unit": "%"},
+                ],
+            },
+            source_hints=["Pattern reference set", "Hatch composition test"],
+        ),
+        make_task(
+            "hatch",
+            "contribution",
+            goal="show stacked progress range",
+            question="빗금 구간으로 누적 기여도를 보여라",
+            dataset={
+                "title": "기여도 범위",
+                "items": [
+                    {"label": "Baseline", "value": 44, "unit": "%"},
+                    {"label": "Upside", "value": 31, "unit": "%", "note": "Confidence range"},
+                    {"label": "Stretch", "value": 25, "unit": "%"},
+                ],
+            },
+            source_hints=["Pattern reference set", "Planning range"],
+        ),
+        make_task(
+            "hatch",
+            "comparison",
+            goal="compare feature matrix for hatch treatment set",
+            question="빗금 treatment 세트에서도 플랜 비교표를 유지하라",
+            dataset={
+                "title": "플랜 비교",
+                "headers": ["플랜", "월 요금", "AI 크레딧", "협업 좌석"],
+                "rows": [
+                    ["Starter", "9,900", "50", "1"],
+                    ["Pro", "24,900", "250", "5"],
+                    ["Scale", "59,000", "Unlimited", "20"],
+                ],
+            },
+            source_hints=["Pattern reference set", "Table baseline"],
+        ),
+        make_task(
+            "hatch",
+            "metric-wall",
+            goal="headline kpi summary for hatch treatment set",
+            question="빗금 treatment 세트에서도 KPI 카드를 유지하라",
+            dataset={
+                "title": "핵심 KPI",
+                "items": [
+                    {"label": "ARR", "value": 128, "unit": "억"},
+                    {"label": "Gross Margin", "value": 71, "unit": "%"},
+                    {"label": "Active Seats", "value": 320, "unit": "만"},
+                ],
+            },
+            source_hints=["Pattern reference set", "Executive KPI wall"],
+        ),
+        make_task(
+            "hatch",
+            "single-stat",
+            goal="headline single stat for hatch treatment set",
+            question="빗금 treatment 세트에서도 핵심 숫자를 유지하라",
+            dataset={
+                "title": "이번 분기 핵심 수치",
+                "label": "분기 ARR",
+                "value": 38,
+                "unit": "억",
+            },
+            source_hints=["Pattern reference set", "Hero stat treatment"],
+        ),
+        make_task(
+            "hatch",
+            "fact-table",
+            goal="fact lookup for hatch treatment set",
+            question="빗금 treatment 세트에서도 팩트 테이블을 유지하라",
+            dataset={
+                "title": "프로덕트 팩트",
+                "headers": ["항목", "값"],
+                "rows": [
+                    ["출시", "2021"],
+                    ["고객사", "2,400+"],
+                    ["시장", "B2B SaaS"],
+                ],
+            },
+            source_hints=["Pattern reference set", "Fact lookup sheet"],
+        ),
+    ]
+
+    dot_tasks = [
+        make_task(
+            "dot",
+            "ranking",
+            goal="show ranking for accessibility",
+            question="색맹 접근성을 위해 점무늬 패턴으로 채널을 비교하라",
+            dataset={
+                "title": "접근성 채널 점유 점수",
+                "unit": "pt",
+                "items": [
+                    {"label": "Organic Search", "value": 42},
+                    {"label": "Enterprise Sales", "value": 31},
+                    {"label": "Lifecycle Email", "value": 21},
+                    {"label": "Partner Network", "value": 14},
+                ],
+            },
+            source_hints=["Accessibility review", "Color blind safe chart"],
+        ),
+        make_task(
+            "dot",
+            "vertical-bar",
+            goal="show category comparison for accessibility",
+            question="색맹 접근성을 위해 지역별 실적을 세로 막대로 비교하라",
+            dataset={
+                "title": "접근성 지역 실적",
+                "unit": "억",
+                "items": [
+                    {"label": "KR", "value": 18},
+                    {"label": "US", "value": 24},
+                    {"label": "JP", "value": 13},
+                    {"label": "EU", "value": 20},
+                ],
+            },
+            source_hints=["Accessibility review", "Color blind safe comparison"],
+        ),
+        make_task(
+            "dot",
+            "trend",
+            goal="show trend for accessibility review",
+            question="색맹 접근성 세트에서도 추세선을 유지하라",
+            dataset={
+                "title": "접근성 ARR 추이",
+                "x_label": "연도",
+                "y_label": "ARR",
+                "points": [
+                    {"x": "2021", "y": 12},
+                    {"x": "2022", "y": 19},
+                    {"x": "2023", "y": 31},
+                    {"x": "2024", "y": 46},
+                ],
+            },
+            source_hints=["Accessibility review", "Trend baseline"],
+        ),
+        make_task(
+            "dot",
+            "share",
+            goal="show composition for accessibility",
+            question="색맹 접근성을 위해 점무늬 패턴으로 비중을 구분하라",
+            dataset={
+                "title": "접근성 비중 테스트",
+                "items": [
+                    {"label": "Organic", "value": 38, "unit": "%"},
+                    {"label": "Paid", "value": 26, "unit": "%"},
+                    {"label": "Partner", "value": 21, "unit": "%"},
+                    {"label": "Newsletter", "value": 15, "unit": "%"},
+                ],
+            },
+            source_hints=["Accessibility review", "Color blind safe share chart"],
+        ),
+        make_task(
+            "dot",
+            "contribution",
+            goal="show stacked progress for accessibility",
+            question="점무늬 패턴으로 단계별 누적 기여도를 구분하라",
+            dataset={
+                "title": "접근성 구성 바",
+                "items": [
+                    {"label": "Acquisition", "value": 36, "unit": "%"},
+                    {"label": "Activation", "value": 33, "unit": "%"},
+                    {"label": "Expansion", "value": 19, "unit": "%"},
+                    {"label": "Referral", "value": 12, "unit": "%"},
+                ],
+            },
+            source_hints=["Accessibility review", "Color blind safe progress chart"],
+        ),
+        make_task(
+            "dot",
+            "comparison",
+            goal="compare feature matrix for accessibility review",
+            question="접근성 세트에서도 플랜 비교표를 유지하라",
+            dataset={
+                "title": "플랜 비교",
+                "headers": ["플랜", "월 요금", "AI 크레딧", "협업 좌석"],
+                "rows": [
+                    ["Starter", "9,900", "50", "1"],
+                    ["Pro", "24,900", "250", "5"],
+                    ["Scale", "59,000", "Unlimited", "20"],
+                ],
+            },
+            source_hints=["Accessibility review", "Table baseline"],
+        ),
+        make_task(
+            "dot",
+            "metric-wall",
+            goal="headline kpi summary for accessibility review",
+            question="접근성 세트에서도 KPI 카드 벽을 유지하라",
+            dataset={
+                "title": "핵심 KPI",
+                "items": [
+                    {"label": "ARR", "value": 128, "unit": "억"},
+                    {"label": "Gross Margin", "value": 71, "unit": "%"},
+                    {"label": "Active Seats", "value": 320, "unit": "만"},
+                ],
+            },
+            source_hints=["Accessibility review", "Executive KPI wall"],
+        ),
+        make_task(
+            "dot",
+            "single-stat",
+            goal="headline single stat for accessibility review",
+            question="접근성 세트에서도 핵심 숫자를 유지하라",
+            dataset={
+                "title": "이번 분기 핵심 수치",
+                "label": "분기 ARR",
+                "value": 38,
+                "unit": "억",
+            },
+            source_hints=["Accessibility review", "Hero stat treatment"],
+        ),
+        make_task(
+            "dot",
+            "fact-table",
+            goal="fact lookup for accessibility review",
+            question="접근성 세트에서도 팩트 테이블을 유지하라",
+            dataset={
+                "title": "프로덕트 팩트",
+                "headers": ["항목", "값"],
+                "rows": [
+                    ["출시", "2021"],
+                    ["고객사", "2,400+"],
+                    ["시장", "B2B SaaS"],
+                ],
+            },
+            source_hints=["Accessibility review", "Fact lookup sheet"],
+        ),
+    ]
+
+    return fill_tasks + hatch_tasks + dot_tasks
 
 
 def _theme_gallery_sample_tasks(theme_set: str, variant: dict[str, Any]) -> list[dict[str, Any]]:

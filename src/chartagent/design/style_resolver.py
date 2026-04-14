@@ -308,6 +308,22 @@ def _resolve_pattern_policy(task: dict[str, Any], dataset: dict[str, Any], chart
     ).lower()
     notes = _collect_pattern_notes(dataset)
     explicit_pattern = _contains_any(haystack, ("pattern", "stripe", "texture", "hatch", "striped", "줄무늬", "패턴", "텍스처", "빗금", "해치"))
+    explicit_dot = _contains_any(
+        haystack,
+        (
+            "dot pattern",
+            "polka dot",
+            "halftone",
+            "stipple",
+            "dotted",
+            "dot texture",
+            "점무늬",
+            "땡땡이",
+            "도트 패턴",
+            "도트 텍스처",
+            "하프톤",
+        ),
+    )
     explicit_outline = _contains_any(
         haystack,
         (
@@ -352,6 +368,14 @@ def _resolve_pattern_policy(task: dict[str, Any], dataset: dict[str, Any], chart
             "enabled": True,
             "reason": "accessibility",
             "target_mode": "alternating",
+            "pattern_kind": "dot_sparse",
+            "fill_treatment": "pattern_overlay",
+        }
+    if explicit_dot:
+        return {
+            "enabled": True,
+            "reason": "explicit_dot",
+            "target_mode": "tagged_or_secondary",
             "pattern_kind": "dot_sparse",
             "fill_treatment": "pattern_overlay",
         }

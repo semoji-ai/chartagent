@@ -5,7 +5,7 @@
   "chart_variant": "full_gauge",
   "title_mode": "question_first",
   "title_text": "원형 게이지로 목표 달성률을 보여라",
-  "subtitle_text": "single value normalized dataset · unit: %",
+  "subtitle_text": "단위: %",
   "annotation_strategy": "highlight_current_value",
   "label_strategy": "center_value_with_bounds",
   "legend_strategy": "none",

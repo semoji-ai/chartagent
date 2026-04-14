@@ -5,7 +5,7 @@
   "chart_variant": "stacked_share",
   "title_mode": "question_first",
   "title_text": "누적 프로그레스 바로 구성 비중을 보여라",
-  "subtitle_text": "share breakdown normalized dataset",
+  "subtitle_text": "",
   "annotation_strategy": "highlight_primary_segment",
   "label_strategy": "segment_labels_with_legend",
   "legend_strategy": "implicit",

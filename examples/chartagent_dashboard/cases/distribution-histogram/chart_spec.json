@@ -5,7 +5,7 @@
   "chart_variant": "histogram",
   "title_mode": "question_first",
   "title_text": "점수 분포를 구간별로 보여라",
-  "subtitle_text": "distribution bins normalized dataset",
+  "subtitle_text": "",
   "annotation_strategy": "minimal",
   "label_strategy": "bin_labels_bottom",
   "legend_strategy": "none",

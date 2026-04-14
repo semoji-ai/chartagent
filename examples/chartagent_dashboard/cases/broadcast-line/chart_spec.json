@@ -5,7 +5,7 @@
   "chart_variant": "trend",
   "title_mode": "question_first",
   "title_text": "속보 그래픽처럼 실시간 추세를 보여라",
-  "subtitle_text": "time series normalized dataset · unit: %",
+  "subtitle_text": "단위: %",
   "annotation_strategy": "highlight_latest_point",
   "label_strategy": "ticks_with_latest_value",
   "legend_strategy": "none",

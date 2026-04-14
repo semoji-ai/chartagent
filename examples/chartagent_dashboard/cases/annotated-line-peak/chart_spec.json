@@ -5,7 +5,7 @@
   "chart_variant": "line_callout",
   "title_mode": "question_first",
   "title_text": "정점 구간을 강조하라",
-  "subtitle_text": "time series normalized dataset · unit: 억",
+  "subtitle_text": "단위: 억",
   "annotation_strategy": "essential_callout",
   "label_strategy": "callout_with_ticks",
   "legend_strategy": "implicit",

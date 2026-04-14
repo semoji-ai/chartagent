@@ -5,7 +5,7 @@
   "chart_variant": "ohlc",
   "title_mode": "question_first",
   "title_text": "주가 움직임을 시가고가저가종가로 보이라",
-  "subtitle_text": "ohlc series normalized dataset",
+  "subtitle_text": "",
   "annotation_strategy": "latest_move",
   "label_strategy": "sparse_date_ticks",
   "legend_strategy": "none",

@@ -5,7 +5,7 @@
   "chart_variant": "lookup",
   "title_mode": "goal_first",
   "title_text": "핵심 정보",
-  "subtitle_text": "row column table normalized dataset",
+  "subtitle_text": "",
   "annotation_strategy": "minimal",
   "label_strategy": "table_headers",
   "legend_strategy": "implicit",

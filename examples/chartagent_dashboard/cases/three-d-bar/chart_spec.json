@@ -5,7 +5,7 @@
   "chart_variant": "three_d",
   "title_mode": "question_first",
   "title_text": "입체 막대 스타일로 제품군을 비교하라",
-  "subtitle_text": "label value list normalized dataset · unit: 점",
+  "subtitle_text": "단위: 점",
   "annotation_strategy": "minimal",
   "label_strategy": "short_labels_bottom",
   "legend_strategy": "none",

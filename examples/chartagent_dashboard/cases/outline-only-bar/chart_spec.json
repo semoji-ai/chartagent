@@ -5,7 +5,7 @@
   "chart_variant": "vertical",
   "title_mode": "question_first",
   "title_text": "속을 채우지 않은 테두리 막대로 잠정치를 보여라",
-  "subtitle_text": "label value list normalized dataset · unit: 만",
+  "subtitle_text": "단위: 만",
   "annotation_strategy": "minimal",
   "label_strategy": "short_labels_bottom",
   "legend_strategy": "none",
