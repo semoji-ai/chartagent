@@ -516,8 +516,8 @@ class ChartAgentRunnerTests(unittest.TestCase):
         self.assertEqual(result.chart_spec["style_spec"]["layout_preset"], "hero_panel")
         self.assertEqual(len(result.chart_spec["annotations"]), 3)
         self.assertIn("매출", result.render_svg)
-        self.assertIn('<text x="60" y="82" class="subtitle" fill="#0f4c5c" style="fill:#0f4c5c !important;">', result.render_svg)
-        self.assertIn('<rect x="60" y="138" width="400" height="156"', result.render_svg)
+        self.assertIn('<rect x="60" y="122" width="400" height="156"', result.render_svg)
+        self.assertIn('class="subtitle" fill="#0f4c5c" style="fill:#0f4c5c !important;">가입자</text>', result.render_svg)
 
     def test_build_chart_artifacts_uses_poster_hero_metric_wall_layout(self) -> None:
         result = build_chart_artifacts(
@@ -542,7 +542,8 @@ class ChartAgentRunnerTests(unittest.TestCase):
         self.assertEqual(result.chart_spec["chart_family"], "metric_wall")
         self.assertEqual(result.chart_spec["style_spec"]["theme_set"], "poster_editorial")
         self.assertEqual(result.chart_spec["style_spec"]["theme_source_refs"], ["pinterest", "notion", "claude"])
-        self.assertIn('<rect x="60" y="138" width="840" height="178" rx="30"', result.render_svg)
+        self.assertIn('<rect x="60" y="122" width="840" height="178" rx="30"', result.render_svg)
+        self.assertIn(">Active Seats</text>", result.render_svg)
         self.assertIn(">editorial poster metric</text>", result.render_svg)
 
     def test_build_chart_artifacts_uses_broadcast_signal_surface_for_single_stat(self) -> None:

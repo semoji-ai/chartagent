@@ -58,10 +58,10 @@ Current verified outputs:
 
 ```bash
 cd /Users/jleavens_macmini/Projects/chartagent
-PYTHONPATH=src python3.12 -m unittest \
-  tests.test_chartagent_runner \
-  tests.test_chartagent_dashboard
+python3 -m pytest
 ```
+
+The test suite bootstraps `src/` automatically, so local development no longer needs a manual `PYTHONPATH=src` prefix.
 
 ## Key Directories
 
