@@ -106,27 +106,12 @@ def make_rounded_box_bar(
     width: float,
     depth: float,
     corner_r: float,
-    top_bevel: float = 0.08,
 ) -> trimesh.Trimesh:
-    """Rounded-rectangle extrusion with a subtle top bevel for soft upper edges."""
-    bevel = min(top_bevel, height * 0.3, corner_r * 0.95)
-    body_h = max(1e-3, height - bevel)
+    """Rounded-rectangle extrusion: vertical edges rounded, flat top and bottom."""
     body_poly = _rounded_rect_polygon(width, depth, corner_r)
-    body = trimesh.creation.extrude_polygon(body_poly, height=body_h)
-    body.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
-
-    cap_poly = _rounded_rect_polygon(
-        width - 2 * bevel * 0.6,
-        depth - 2 * bevel * 0.6,
-        max(0.0, corner_r - bevel * 0.6),
-    )
-    cap = trimesh.creation.extrude_polygon(cap_poly, height=bevel)
-    cap.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
-    cap.apply_translation([0.0, body_h, 0.0])
-
-    combined = trimesh.util.concatenate([body, cap])
-    combined.process(validate=False)
-    return combined
+    mesh = trimesh.creation.extrude_polygon(body_poly, height=height)
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
+    return mesh
 
 
 def make_soft_shadow_disks(
@@ -269,8 +254,7 @@ def build_bar_scene(shape: str) -> pyrender.Scene:
                 height=body_height,
                 width=bar_width,
                 depth=bar_width,
-                corner_r=0.08,
-                top_bevel=0.08,
+                corner_r=0.14,
             )
         bar.apply_translation([cx, 0.0, 0.0])
         scene.add(pyrender.Mesh.from_trimesh(bar, material=bar_material, smooth=True))
@@ -286,11 +270,14 @@ def build_donut_scene() -> pyrender.Scene:
     scene = pyrender.Scene(bg_color=BG_COLOR, ambient_light=[0.14, 0.14, 0.16])
     _add_common_scene(scene)
 
-    major_r = 2.6
-    tube_r = 0.72
+    major_r = 2.2
+    tube_r = 0.62
     total = sum(rec["value"] for rec in DONUT_RECORDS)
     start = -math.pi / 2
     gap = math.radians(2.0)
+
+    donut_center_y = major_r + tube_r + 0.15
+    stand_up = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
 
     for rec in DONUT_RECORDS:
         sweep = rec["value"] / total * 2.0 * math.pi
@@ -303,7 +290,8 @@ def build_donut_scene() -> pyrender.Scene:
             tube_sections=48,
             arc_sections=max(8, int(48 * sweep / (2.0 * math.pi))),
         )
-        slice_mesh.apply_translation([0.0, tube_r + 0.02, 0.0])
+        slice_mesh.apply_transform(stand_up)
+        slice_mesh.apply_translation([0.0, donut_center_y, 0.0])
         color_linear = srgb_to_linear([*rec["color"], 1.0])
         mat = pyrender.MetallicRoughnessMaterial(
             baseColorFactor=color_linear,
@@ -313,18 +301,18 @@ def build_donut_scene() -> pyrender.Scene:
         scene.add(pyrender.Mesh.from_trimesh(slice_mesh, material=mat, smooth=True))
         start = end
 
-    shadow_layers = 16
+    shadow_layers = 14
     for i in range(shadow_layers):
         t = i / max(1, shadow_layers - 1)
-        scale = 1.0 + 0.25 * t
-        radius = (major_r + tube_r) * scale
-        alpha = 0.30 * math.exp(-3.0 * t)
+        scale = 1.0 + 0.35 * t
+        rx = (major_r + tube_r * 0.6) * scale
+        alpha = 0.32 * math.exp(-3.0 * t)
         if alpha < 0.012:
             continue
-        disk = trimesh.creation.cylinder(radius=radius, height=0.008, sections=96)
+        disk = trimesh.creation.cylinder(radius=rx, height=0.008, sections=96)
         disk.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
         disk.apply_translation([0.0, 0.003 + i * 0.0009, 0.0])
-        disk.apply_scale([1.0, 1.0, 0.42])
+        disk.apply_scale([1.0, 1.0, 0.22])
         mat = pyrender.MetallicRoughnessMaterial(
             baseColorFactor=[0.02, 0.018, 0.015, alpha],
             metallicFactor=0.0,
@@ -333,9 +321,9 @@ def build_donut_scene() -> pyrender.Scene:
         )
         scene.add(pyrender.Mesh.from_trimesh(disk, material=mat, smooth=False))
 
-    camera = pyrender.PerspectiveCamera(yfov=np.radians(26.0), aspectRatio=WIDTH / HEIGHT)
-    eye = np.array([0.0, 5.2, 8.4])
-    target = np.array([0.0, 0.3, 0.0])
+    camera = pyrender.PerspectiveCamera(yfov=np.radians(22.0), aspectRatio=WIDTH / HEIGHT)
+    eye = np.array([0.0, donut_center_y + 0.6, 9.5])
+    target = np.array([0.0, donut_center_y - 0.2, 0.0])
     scene.add(camera, pose=look_at(eye, target, np.array([0.0, 1.0, 0.0])))
     return scene
 
