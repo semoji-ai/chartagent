@@ -57,7 +57,16 @@ def _svg_parts(width: int, height: int, chart_spec: dict[str, Any]) -> list[str]
 
 
 def _background_rect(width: int, height: int, chart_spec: dict[str, Any]) -> str:
-    return f'<rect x="0" y="0" width="{width}" height="{height}" fill="{_theme_token(chart_spec, "bg", "#ffffff")}" />'
+    bg_color = _theme_token(chart_spec, "bg", "#ffffff")
+    base = f'<rect x="0" y="0" width="{width}" height="{height}" fill="{bg_color}" />'
+    if _clay_mode_active(chart_spec):
+        floor_top = int(height * 0.55)
+        floor_layer = (
+            f'<rect x="0" y="{floor_top}" width="{width}" height="{height - floor_top}"'
+            f' fill="url(#cg-clay-floor)" pointer-events="none" />'
+        )
+        return base + floor_layer
+    return base
 
 
 def _render_bar_horizontal(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
@@ -241,6 +250,13 @@ def _render_donut(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
         f'<circle cx="{cx}" cy="{cy}" r="{radius}" stroke="{_theme_token(chart_spec, "track", "#e2e8f0")}" stroke-width="{band_width}" fill="none" />'
     )
     if is_clay:
+        shadow_rx = outer_radius * 1.05
+        shadow_ry = max(10.0, outer_radius * 0.12)
+        shadow_cy = cy + outer_radius + shadow_ry * 0.55
+        parts.append(
+            f'<ellipse cx="{cx:.2f}" cy="{shadow_cy:.2f}" rx="{shadow_rx:.2f}" ry="{shadow_ry:.2f}"'
+            f' fill="#0f0b08" fill-opacity="0.26" filter="url(#cg-clay-blur)" />'
+        )
         clay_start_angle = -90.0
         for index, record in enumerate(records):
             value = float(record.get("value") or 0.0)
@@ -249,9 +265,25 @@ def _render_donut(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
             end_angle = clay_start_angle + sweep
             parts.append(
                 f'<path d="{_donut_slice_path(cx=cx, cy=cy, outer_radius=outer_radius, inner_radius=inner_radius, start_angle=clay_start_angle, end_angle=end_angle)}"'
-                f' fill="{_clay_fill(chart_spec, color)}"{_clay_filter_attr(chart_spec)} />'
+                f' fill="{_clay_fill(chart_spec, color)}"{_clay_filter_attr(chart_spec, soft=True)} />'
             )
             clay_start_angle = end_angle
+        rim_start = -180.0
+        rim_end = 0.0
+        rim_rx = outer_radius
+        parts.append(
+            f'<path d="M {cx - rim_rx:.2f} {cy:.2f}'
+            f' A {rim_rx:.2f} {rim_rx:.2f} 0 0 1 {cx + rim_rx:.2f} {cy:.2f}"'
+            f' fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.55" stroke-linecap="round" />'
+        )
+        glint_rx = outer_radius * 0.28
+        glint_ry = outer_radius * 0.11
+        glint_cx = cx - outer_radius * 0.38
+        glint_cy = cy - outer_radius * 0.62
+        parts.append(
+            f'<ellipse cx="{glint_cx:.2f}" cy="{glint_cy:.2f}" rx="{glint_rx:.2f}" ry="{glint_ry:.2f}"'
+            f' fill="#ffffff" fill-opacity="0.55" filter="url(#cg-clay-blur)" pointer-events="none" transform="rotate(-22 {glint_cx:.2f} {glint_cy:.2f})" />'
+        )
     for index, record in enumerate(records):
         value = float(record.get("value") or 0.0)
         dash = (value / total) * circumference
@@ -968,17 +1000,58 @@ def _render_bar_core(chart_spec: dict[str, Any], dataset: dict[str, Any], annota
                 f'<polygon points="{x:.2f},{y:.2f} {x + depth:.2f},{y - depth:.2f} {x + bar_width + depth:.2f},{y - depth:.2f} {x + bar_width:.2f},{y:.2f}" fill="{_theme_token(chart_spec, "series", ["#60a5fa"])[0]}" />'
             )
         elif _clay_mode_active(chart_spec):
-            clay_radius = _motif_token(chart_spec, "bar_radius", max(12, int(bar_width / 2)))
+            base_color = str(bar_style["paint"])
+            has_hex = bool(_HEX_COLOR_RE.match(base_color))
+            clay_radius = float(_motif_token(chart_spec, "bar_radius", max(12.0, bar_width * 0.45)))
+            cap_ry = max(4.0, min(bar_width * 0.34, 11.0))
+
+            shadow_rx = bar_width * 0.56
+            shadow_ry = max(2.8, bar_width * 0.11)
+            shadow_cy = frame["plot_bottom"] + shadow_ry * 0.65 + 3
+            parts.append(
+                f'<ellipse cx="{x_center:.2f}" cy="{shadow_cy:.2f}" rx="{shadow_rx:.2f}" ry="{shadow_ry:.2f}"'
+                f' fill="#0f0b08" fill-opacity="0.22" filter="url(#cg-clay-blur-tight)" />'
+            )
+
             parts.append(
                 f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" height="{bar_h:.2f}"'
-                f' fill="{_clay_fill(chart_spec, bar_style["paint"])}"'
+                f' fill="{_clay_fill(chart_spec, base_color)}"'
                 f'{_svg_optional_stroke(bar_style["stroke"], bar_style["stroke_width"])}'
-                f' rx="{clay_radius}"{_clay_filter_attr(chart_spec)} />'
+                f' rx="{clay_radius}" />'
+            )
+
+            ao_height = max(8.0, min(bar_h * 0.45, 44.0))
+            if bar_h > 12:
+                parts.append(
+                    f'<rect x="{x:.2f}" y="{(y + bar_h - ao_height):.2f}" width="{bar_width:.2f}"'
+                    f' height="{ao_height:.2f}" fill="url(#cg-clay-ao)" rx="{clay_radius}" pointer-events="none" />'
+                )
+
+            cap_color = _hex_lighten(base_color, 0.22) if has_hex else base_color
+            cap_shadow = _hex_darken(base_color, 0.18) if has_hex else base_color
+            parts.append(
+                f'<ellipse cx="{x_center:.2f}" cy="{(y + cap_ry * 0.15):.2f}" rx="{(bar_width / 2 + 0.5):.2f}"'
+                f' ry="{cap_ry:.2f}" fill="{cap_shadow}" opacity="0.55" />'
             )
             parts.append(
-                f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" height="{min(bar_h, 14.0):.2f}"'
-                f' fill="url(#cg-clay-sheen)" rx="{clay_radius}" pointer-events="none" />'
+                f'<ellipse cx="{x_center:.2f}" cy="{y:.2f}" rx="{(bar_width / 2):.2f}"'
+                f' ry="{cap_ry:.2f}" fill="{cap_color}" />'
             )
+            rim_color = _hex_lighten(base_color, 0.55) if has_hex else "#ffffff"
+            parts.append(
+                f'<path d="M {x:.2f} {y:.2f} A {(bar_width / 2):.2f} {cap_ry:.2f} 0 0 1 {(x + bar_width):.2f} {y:.2f}"'
+                f' fill="none" stroke="{rim_color}" stroke-width="1.6" stroke-opacity="0.85" stroke-linecap="round" />'
+            )
+
+            glint_rx = bar_width * 0.18
+            glint_ry = max(4.0, min(bar_h * 0.08, 9.0))
+            glint_cx = x + bar_width * 0.32
+            glint_cy = y + cap_ry + min(bar_h * 0.18, 22.0)
+            if bar_h > cap_ry * 2 + 6:
+                parts.append(
+                    f'<ellipse cx="{glint_cx:.2f}" cy="{glint_cy:.2f}" rx="{glint_rx:.2f}" ry="{glint_ry:.2f}"'
+                    f' fill="#ffffff" fill-opacity="0.55" filter="url(#cg-clay-blur-tight)" pointer-events="none" />'
+                )
         else:
             parts.append(
                 f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" height="{bar_h:.2f}" fill="{bar_style["paint"]}"'
@@ -1773,13 +1846,46 @@ def _clay_defs_block(chart_spec: dict[str, Any]) -> str:
         '<feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>'
         '</filter>'
     )
+    blur_filter = (
+        '<filter id="cg-clay-blur" x="-50%" y="-50%" width="200%" height="200%">'
+        '<feGaussianBlur stdDeviation="4" />'
+        '</filter>'
+    )
+    tight_blur_filter = (
+        '<filter id="cg-clay-blur-tight" x="-50%" y="-50%" width="200%" height="200%">'
+        '<feGaussianBlur stdDeviation="2" />'
+        '</filter>'
+    )
     highlight_sheen = (
         '<linearGradient id="cg-clay-sheen" x1="0%" y1="0%" x2="0%" y2="100%">'
         '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.55" />'
         '<stop offset="45%" stop-color="#ffffff" stop-opacity="0.0" />'
         '</linearGradient>'
     )
-    return "<defs>" + drop_shadow + soft_shadow + highlight_sheen + "".join(gradients) + "</defs>"
+    ao_gradient = (
+        '<linearGradient id="cg-clay-ao" x1="0%" y1="0%" x2="0%" y2="100%">'
+        '<stop offset="0%" stop-color="#1a1512" stop-opacity="0" />'
+        '<stop offset="100%" stop-color="#1a1512" stop-opacity="0.32" />'
+        '</linearGradient>'
+    )
+    floor_gradient = (
+        '<linearGradient id="cg-clay-floor" x1="0%" y1="0%" x2="0%" y2="100%">'
+        '<stop offset="0%" stop-color="#1a1512" stop-opacity="0" />'
+        '<stop offset="100%" stop-color="#1a1512" stop-opacity="0.14" />'
+        '</linearGradient>'
+    )
+    return (
+        "<defs>"
+        + drop_shadow
+        + soft_shadow
+        + blur_filter
+        + tight_blur_filter
+        + highlight_sheen
+        + ao_gradient
+        + floor_gradient
+        + "".join(gradients)
+        + "</defs>"
+    )
 
 
 def _clay_fill(chart_spec: dict[str, Any], color: Any) -> str:
