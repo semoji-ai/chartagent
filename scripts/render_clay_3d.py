@@ -270,8 +270,8 @@ def build_donut_scene() -> pyrender.Scene:
     scene = pyrender.Scene(bg_color=BG_COLOR, ambient_light=[0.14, 0.14, 0.16])
     _add_common_scene(scene)
 
-    major_r = 2.2
-    tube_r = 0.62
+    major_r = 1.75
+    tube_r = 0.50
     total = sum(rec["value"] for rec in DONUT_RECORDS)
     start = -math.pi / 2
     gap = math.radians(2.0)
