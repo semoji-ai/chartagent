@@ -1019,6 +1019,14 @@ def _render_bar_core(chart_spec: dict[str, Any], dataset: dict[str, Any], annota
                 f' rx="{clay_radius}" />'
             )
 
+            top_sheen_height = min(bar_h * 0.55, 80.0)
+            if bar_h > 18:
+                parts.append(
+                    f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}"'
+                    f' height="{top_sheen_height:.2f}" fill="url(#cg-clay-top-sheen)"'
+                    f' rx="{clay_radius}" pointer-events="none" />'
+                )
+
             ao_height = max(8.0, min(bar_h * 0.42, 44.0))
             if bar_h > 16:
                 parts.append(
@@ -1026,14 +1034,14 @@ def _render_bar_core(chart_spec: dict[str, Any], dataset: dict[str, Any], annota
                     f' height="{ao_height:.2f}" fill="url(#cg-clay-ao)" rx="{clay_radius}" pointer-events="none" />'
                 )
 
-            glint_rx = max(3.0, bar_width * 0.08)
-            glint_ry = min(bar_h * 0.34, 85.0)
-            glint_cx = x + bar_width * 0.26
-            glint_cy = y + min(bar_h * 0.40, 100.0)
+            glint_rx = max(4.0, bar_width * 0.14)
+            glint_ry = min(bar_h * 0.30, 70.0)
+            glint_cx = x + bar_width * 0.27
+            glint_cy = y + min(bar_h * 0.38, 90.0)
             if bar_h > 24:
                 parts.append(
                     f'<ellipse cx="{glint_cx:.2f}" cy="{glint_cy:.2f}" rx="{glint_rx:.2f}" ry="{glint_ry:.2f}"'
-                    f' fill="#ffffff" fill-opacity="0.38" filter="url(#cg-clay-blur)" pointer-events="none" />'
+                    f' fill="url(#cg-clay-glint)" pointer-events="none" />'
                 )
         else:
             parts.append(
@@ -1877,6 +1885,20 @@ def _clay_defs_block(chart_spec: dict[str, Any]) -> str:
         '<stop offset="45%" stop-color="#ffffff" stop-opacity="0.0" />'
         '</linearGradient>'
     )
+    glint_gradient = (
+        '<radialGradient id="cg-clay-glint" cx="50%" cy="50%" r="50%">'
+        '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.62" />'
+        '<stop offset="55%" stop-color="#ffffff" stop-opacity="0.18" />'
+        '<stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />'
+        '</radialGradient>'
+    )
+    top_sheen_gradient = (
+        '<radialGradient id="cg-clay-top-sheen" cx="28%" cy="-5%" r="78%" fx="26%" fy="-10%">'
+        '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.5" />'
+        '<stop offset="40%" stop-color="#ffffff" stop-opacity="0.12" />'
+        '<stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />'
+        '</radialGradient>'
+    )
     ao_gradient = (
         '<linearGradient id="cg-clay-ao" x1="0%" y1="0%" x2="0%" y2="100%">'
         '<stop offset="0%" stop-color="#1a1512" stop-opacity="0" />'
@@ -1896,6 +1918,8 @@ def _clay_defs_block(chart_spec: dict[str, Any]) -> str:
         + blur_filter
         + tight_blur_filter
         + highlight_sheen
+        + glint_gradient
+        + top_sheen_gradient
         + ao_gradient
         + floor_gradient
         + "".join(gradients)
