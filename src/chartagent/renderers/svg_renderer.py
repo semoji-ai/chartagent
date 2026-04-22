@@ -97,11 +97,11 @@ def _render_bar_horizontal(chart_spec: dict[str, Any], dataset: dict[str, Any]) 
             bar_style = _series_fill_style(chart_spec, pattern_defs, slot=f"bar-horizontal-{index}", base_color=bar_fill)
         parts.append(f'<text x="{left - 16}" y="{y + 24}" class="label" text-anchor="end">{label}</text>')
         if _clay_mode_active(chart_spec):
-            shadow_rx = max(10.0, bar_width * 0.5)
+            shadow_rx = max(12.0, bar_width * 0.55)
             parts.append(
                 f'<ellipse cx="{(left + bar_width * 0.5):.2f}" cy="{(y + 34):.2f}"'
-                f' rx="{shadow_rx:.2f}" ry="3.2"'
-                f' fill="#0f0b08" fill-opacity="0.18" filter="url(#cg-clay-blur-tight)" />'
+                f' rx="{shadow_rx:.2f}" ry="4.2"'
+                f' fill="url(#cg-clay-ground-shadow)" pointer-events="none" />'
             )
             parts.append(
                 f'<rect x="{left}" y="{y + 6}" width="{bar_width:.2f}" height="24" rx="12"'
@@ -251,12 +251,12 @@ def _render_donut(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
         f'<circle cx="{cx}" cy="{cy}" r="{radius}" stroke="{_theme_token(chart_spec, "track", "#e2e8f0")}" stroke-width="{band_width}" fill="none" />'
     )
     if is_clay:
-        shadow_rx = outer_radius * 1.05
-        shadow_ry = max(10.0, outer_radius * 0.12)
-        shadow_cy = cy + outer_radius + shadow_ry * 0.55
+        shadow_rx = outer_radius * 1.15
+        shadow_ry = max(14.0, outer_radius * 0.16)
+        shadow_cy = cy + outer_radius + shadow_ry * 0.45
         parts.append(
             f'<ellipse cx="{cx:.2f}" cy="{shadow_cy:.2f}" rx="{shadow_rx:.2f}" ry="{shadow_ry:.2f}"'
-            f' fill="#0f0b08" fill-opacity="0.26" filter="url(#cg-clay-blur)" />'
+            f' fill="url(#cg-clay-ground-shadow)" pointer-events="none" />'
         )
         clay_start_angle = -90.0
         for index, record in enumerate(records):
@@ -1004,12 +1004,12 @@ def _render_bar_core(chart_spec: dict[str, Any], dataset: dict[str, Any], annota
             base_color = str(bar_style["paint"])
             clay_radius = float(_motif_token(chart_spec, "bar_radius", max(12.0, bar_width * 0.45)))
 
-            shadow_rx = bar_width * 0.56
-            shadow_ry = max(2.8, bar_width * 0.11)
-            shadow_cy = frame["plot_bottom"] + shadow_ry * 0.65 + 3
+            shadow_rx = bar_width * 0.70
+            shadow_ry = max(3.5, bar_width * 0.14)
+            shadow_cy = frame["plot_bottom"] + shadow_ry * 0.55 + 3
             parts.append(
                 f'<ellipse cx="{x_center:.2f}" cy="{shadow_cy:.2f}" rx="{shadow_rx:.2f}" ry="{shadow_ry:.2f}"'
-                f' fill="#0f0b08" fill-opacity="0.22" filter="url(#cg-clay-blur-tight)" />'
+                f' fill="url(#cg-clay-ground-shadow)" pointer-events="none" />'
             )
 
             parts.append(
@@ -1893,10 +1893,18 @@ def _clay_defs_block(chart_spec: dict[str, Any]) -> str:
         '</radialGradient>'
     )
     top_sheen_gradient = (
-        '<radialGradient id="cg-clay-top-sheen" cx="28%" cy="-5%" r="78%" fx="26%" fy="-10%">'
-        '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.5" />'
-        '<stop offset="40%" stop-color="#ffffff" stop-opacity="0.12" />'
+        '<linearGradient id="cg-clay-top-sheen" x1="0%" y1="0%" x2="0%" y2="100%">'
+        '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.48" />'
+        '<stop offset="30%" stop-color="#ffffff" stop-opacity="0.16" />'
+        '<stop offset="65%" stop-color="#ffffff" stop-opacity="0.02" />'
         '<stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />'
+        '</linearGradient>'
+    )
+    ground_shadow_gradient = (
+        '<radialGradient id="cg-clay-ground-shadow" cx="50%" cy="50%" r="50%">'
+        '<stop offset="0%" stop-color="#0f0b08" stop-opacity="0.38" />'
+        '<stop offset="55%" stop-color="#0f0b08" stop-opacity="0.14" />'
+        '<stop offset="100%" stop-color="#0f0b08" stop-opacity="0.0" />'
         '</radialGradient>'
     )
     ao_gradient = (
@@ -1920,6 +1928,7 @@ def _clay_defs_block(chart_spec: dict[str, Any]) -> str:
         + highlight_sheen
         + glint_gradient
         + top_sheen_gradient
+        + ground_shadow_gradient
         + ao_gradient
         + floor_gradient
         + "".join(gradients)
