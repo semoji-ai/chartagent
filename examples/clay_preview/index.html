@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>ChartAgent · clay finish preview</title>
+<style>
+  :root { color-scheme: light; }
+  body {
+    margin: 0;
+    padding: 40px;
+    background: #eef2ef;
+    font-family: 'Pretendard', 'Apple SD Gothic Neo', system-ui, sans-serif;
+    color: #1f2a24;
+  }
+  h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.02em; }
+  p.lead { margin: 0 0 32px; color: #4a5550; }
+  .grid {
+    display: grid;
+    gap: 24px;
+    grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+  }
+  figure {
+    margin: 0;
+    padding: 16px;
+    background: #ffffff;
+    border-radius: 18px;
+    box-shadow: 0 16px 40px rgba(15, 27, 22, 0.08);
+  }
+  figcaption { font-size: 14px; color: #4a5550; margin-bottom: 12px; }
+  img { display: block; width: 100%; height: auto; border-radius: 12px; background: transparent; }
+</style>
+</head>
+<body>
+  <h1>Clay finish preview</h1>
+  <p class="lead">SVG 필터 + radial gradient 기반 1단계 faux-3D 프로토타입입니다. 기준 대비 비교를 위해 minimal 테마 바 차트도 포함했습니다.</p>
+  <div class="grid">
+<figure><figcaption>Vertical bar · clay</figcaption><img src="bar_vertical.svg" alt="Vertical bar · clay" /></figure>
+<figure><figcaption>Vertical bar · minimal (before)</figcaption><img src="bar_vertical_minimal.svg" alt="Vertical bar · minimal (before)" /></figure>
+<figure><figcaption>Horizontal bar · clay</figcaption><img src="bar_horizontal.svg" alt="Horizontal bar · clay" /></figure>
+<figure><figcaption>Donut · clay</figcaption><img src="donut.svg" alt="Donut · clay" /></figure>
+<figure><figcaption>Line · clay</figcaption><img src="line.svg" alt="Line · clay" /></figure>
+  </div>
+</body>
+</html>

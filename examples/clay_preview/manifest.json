@@ -1,0 +1,26 @@
+{
+  "out_dir": "/home/user/chartagent/examples/clay_preview",
+  "index": "/home/user/chartagent/examples/clay_preview/index.html",
+  "panels": [
+    {
+      "slug": "bar_vertical",
+      "file": "bar_vertical.svg"
+    },
+    {
+      "slug": "bar_vertical_minimal",
+      "file": "bar_vertical_minimal.svg"
+    },
+    {
+      "slug": "bar_horizontal",
+      "file": "bar_horizontal.svg"
+    },
+    {
+      "slug": "donut",
+      "file": "donut.svg"
+    },
+    {
+      "slug": "line",
+      "file": "line.svg"
+    }
+  ]
+}

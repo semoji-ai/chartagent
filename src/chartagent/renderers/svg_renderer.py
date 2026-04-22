@@ -49,6 +49,7 @@ def _svg_parts(width: int, height: int, chart_spec: dict[str, Any]) -> list[str]
     return [
         _svg_open(width, height),
         _style_block(chart_spec),
+        _clay_defs_block(chart_spec),
         _background_rect(width, height, chart_spec),
         '<g class="cg-root">',
         _title_block(chart_spec),
@@ -86,10 +87,22 @@ def _render_bar_horizontal(chart_spec: dict[str, Any], dataset: dict[str, Any]) 
         if index in patterned_indexes:
             bar_style = _series_fill_style(chart_spec, pattern_defs, slot=f"bar-horizontal-{index}", base_color=bar_fill)
         parts.append(f'<text x="{left - 16}" y="{y + 24}" class="label" text-anchor="end">{label}</text>')
-        parts.append(
-            f'<rect x="{left}" y="{y + 8}" width="{bar_width:.2f}" height="20" rx="10" fill="{bar_style["paint"]}"'
-            f'{_svg_optional_stroke(bar_style["stroke"], bar_style["stroke_width"])} />'
-        )
+        if _clay_mode_active(chart_spec):
+            parts.append(
+                f'<rect x="{left}" y="{y + 6}" width="{bar_width:.2f}" height="24" rx="12"'
+                f' fill="{_clay_fill(chart_spec, bar_style["paint"])}"'
+                f'{_svg_optional_stroke(bar_style["stroke"], bar_style["stroke_width"])}'
+                f'{_clay_filter_attr(chart_spec, soft=True)} />'
+            )
+            parts.append(
+                f'<rect x="{left}" y="{y + 6}" width="{bar_width:.2f}" height="9" rx="12"'
+                f' fill="url(#cg-clay-sheen)" pointer-events="none" />'
+            )
+        else:
+            parts.append(
+                f'<rect x="{left}" y="{y + 8}" width="{bar_width:.2f}" height="20" rx="10" fill="{bar_style["paint"]}"'
+                f'{_svg_optional_stroke(bar_style["stroke"], bar_style["stroke_width"])} />'
+            )
         parts.append(f'<text x="{value_x}" y="{y + 24}" class="value" text-anchor="end">{escape(value_text)}</text>')
     if pattern_defs:
         parts.append(_pattern_defs_block(pattern_defs))
@@ -123,6 +136,7 @@ def _render_line(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
         f'<line x1="{left}" y1="{frame["plot_bottom"]}" x2="{frame["plot_right"]}" y2="{frame["plot_bottom"]}" stroke="{_theme_token(chart_spec, "grid_strong", "#cbd5e1")}" stroke-width="{_motif_token(chart_spec, "axis_stroke_width", 2)}" />'
     )
     parts.append(f'<line x1="{left}" y1="{top}" x2="{left}" y2="{frame["plot_bottom"]}" stroke="{_theme_token(chart_spec, "grid_strong", "#cbd5e1")}" stroke-width="{_motif_token(chart_spec, "axis_stroke_width", 2)}" />')
+    marker_tags: list[str] = []
     for index, point in enumerate(points):
         x = left + step_x * index
         y_value = float(point.get("y") or 0.0)
@@ -130,11 +144,20 @@ def _render_line(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
         poly_points.append(f"{x:.2f},{y:.2f}")
         marker_svg = _marker_svg(chart_spec, x=x, y=y, fill=_theme_token(chart_spec, "accent", "#2563eb"))
         if marker_svg:
-            parts.append(marker_svg)
+            marker_tags.append(marker_svg)
         parts.append(f'<text x="{x:.2f}" y="{frame["plot_bottom"] + 26}" class="tick" text-anchor="middle">{escape(str(point.get("x") or ""))}</text>')
-    parts.append(
-        f'<polyline fill="none" stroke="{_theme_token(chart_spec, "accent", "#2563eb")}" stroke-width="{_motif_token(chart_spec, "primary_stroke_width", 4)}" points="{" ".join(poly_points)}" stroke-linecap="round" stroke-linejoin="round" />'
-    )
+    accent_color = _theme_token(chart_spec, "accent", "#2563eb")
+    stroke_width = _motif_token(chart_spec, "primary_stroke_width", 4)
+    if _clay_mode_active(chart_spec):
+        stroke_width = max(float(stroke_width or 4), 7.0)
+        parts.append(
+            f'<polyline fill="none" stroke="{_clay_fill(chart_spec, accent_color)}" stroke-width="{stroke_width}" points="{" ".join(poly_points)}" stroke-linecap="round" stroke-linejoin="round"{_clay_filter_attr(chart_spec, soft=True)} />'
+        )
+    else:
+        parts.append(
+            f'<polyline fill="none" stroke="{accent_color}" stroke-width="{stroke_width}" points="{" ".join(poly_points)}" stroke-linecap="round" stroke-linejoin="round" />'
+        )
+    parts.extend(marker_tags)
     parts.append(f'<text x="{left}" y="{top - 18}" class="axis">{escape(str(dataset.get("y_label") or "y"))}</text>')
     parts.append(_source_note(chart_spec, height - 24))
     parts.append(_svg_close())
@@ -213,13 +236,29 @@ def _render_donut(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
     pattern_defs: list[str] = []
     patterned_indexes = _pattern_indexes(chart_spec, records, "donut")
     hatch_outlined = _fill_treatment(chart_spec) == "outline_plus_hatch"
+    is_clay = _clay_mode_active(chart_spec)
     parts.append(
         f'<circle cx="{cx}" cy="{cy}" r="{radius}" stroke="{_theme_token(chart_spec, "track", "#e2e8f0")}" stroke-width="{band_width}" fill="none" />'
     )
+    if is_clay:
+        clay_start_angle = -90.0
+        for index, record in enumerate(records):
+            value = float(record.get("value") or 0.0)
+            color = colors[index % len(colors)]
+            sweep = (value / total) * 360.0
+            end_angle = clay_start_angle + sweep
+            parts.append(
+                f'<path d="{_donut_slice_path(cx=cx, cy=cy, outer_radius=outer_radius, inner_radius=inner_radius, start_angle=clay_start_angle, end_angle=end_angle)}"'
+                f' fill="{_clay_fill(chart_spec, color)}"{_clay_filter_attr(chart_spec)} />'
+            )
+            clay_start_angle = end_angle
     for index, record in enumerate(records):
         value = float(record.get("value") or 0.0)
         dash = (value / total) * circumference
         color = colors[index % len(colors)]
+        if is_clay:
+            offset += dash
+            continue
         if hatch_outlined:
             sweep = (value / total) * 360.0
             end_angle = start_angle + sweep
@@ -268,9 +307,11 @@ def _render_donut(chart_spec: dict[str, Any], dataset: dict[str, Any]) -> str:
         swatch_style = {"paint": color, "stroke": None, "stroke_width": None}
         if index in patterned_indexes:
             swatch_style = _series_fill_style(chart_spec, pattern_defs, slot=f"donut-legend-{index}", base_color=color)
+        swatch_fill = _clay_fill(chart_spec, swatch_style["paint"]) if is_clay else swatch_style["paint"]
+        swatch_filter = _clay_filter_attr(chart_spec, soft=True) if is_clay else ""
         parts.append(
-            f'<rect x="{legend_x}" y="{row_center - 9}" width="18" height="18" rx="{swatch_radius}" fill="{swatch_style["paint"]}"'
-            f'{_svg_optional_stroke(swatch_style["stroke"], swatch_style["stroke_width"])} />'
+            f'<rect x="{legend_x}" y="{row_center - 9}" width="18" height="18" rx="{swatch_radius}" fill="{swatch_fill}"'
+            f'{_svg_optional_stroke(swatch_style["stroke"], swatch_style["stroke_width"])}{swatch_filter} />'
         )
         parts.append(
             f'<text x="{legend_x + 28}" y="{text_y}" class="label">{escape(str(record.get("display_label") or record.get("label") or ""))}</text>'
@@ -926,6 +967,18 @@ def _render_bar_core(chart_spec: dict[str, Any], dataset: dict[str, Any], annota
             parts.append(
                 f'<polygon points="{x:.2f},{y:.2f} {x + depth:.2f},{y - depth:.2f} {x + bar_width + depth:.2f},{y - depth:.2f} {x + bar_width:.2f},{y:.2f}" fill="{_theme_token(chart_spec, "series", ["#60a5fa"])[0]}" />'
             )
+        elif _clay_mode_active(chart_spec):
+            clay_radius = _motif_token(chart_spec, "bar_radius", max(12, int(bar_width / 2)))
+            parts.append(
+                f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" height="{bar_h:.2f}"'
+                f' fill="{_clay_fill(chart_spec, bar_style["paint"])}"'
+                f'{_svg_optional_stroke(bar_style["stroke"], bar_style["stroke_width"])}'
+                f' rx="{clay_radius}"{_clay_filter_attr(chart_spec)} />'
+            )
+            parts.append(
+                f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" height="{min(bar_h, 14.0):.2f}"'
+                f' fill="url(#cg-clay-sheen)" rx="{clay_radius}" pointer-events="none" />'
+            )
         else:
             parts.append(
                 f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" height="{bar_h:.2f}" fill="{bar_style["paint"]}"'
@@ -1280,6 +1333,12 @@ def _marker_svg(chart_spec: dict[str, Any], *, x: float, y: float, fill: str, hi
         return ""
     if marker_style == "ring":
         return f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{radius:.0f}" fill="{_theme_token(chart_spec, "bg", "#ffffff")}" stroke="{fill}" stroke-width="2" />'
+    if _clay_mode_active(chart_spec):
+        clay_radius = max(radius, 8.0)
+        return (
+            f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{clay_radius:.0f}" fill="{_clay_fill(chart_spec, fill)}"'
+            f'{_clay_filter_attr(chart_spec, soft=True)} />'
+        )
     return f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{radius:.0f}" fill="{fill}" />'
 
 
@@ -1621,6 +1680,121 @@ def _share_palette(chart_spec: dict[str, Any]) -> list[str]:
     if isinstance(palette, list) and palette:
         return [str(item) for item in palette]
     return ["#2563eb", "#0f766e", "#dc2626", "#d97706", "#7c3aed", "#0891b2"]
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _clay_mode_active(chart_spec: dict[str, Any]) -> bool:
+    style_spec = chart_spec.get("style_spec") or {}
+    if str(style_spec.get("theme_name") or "") == "clay":
+        return True
+    motif_tokens = style_spec.get("motif_tokens") or {}
+    if isinstance(motif_tokens, dict) and str(motif_tokens.get("finish_mode") or "") == "clay":
+        return True
+    return False
+
+
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    normalized = color.lstrip("#")
+    return int(normalized[0:2], 16), int(normalized[2:4], 16), int(normalized[4:6], 16)
+
+
+def _rgb_to_hex(r: float, g: float, b: float) -> str:
+    clamp = lambda c: max(0, min(255, int(round(c))))
+    return f"#{clamp(r):02x}{clamp(g):02x}{clamp(b):02x}"
+
+
+def _hex_lighten(color: str, amount: float) -> str:
+    r, g, b = _hex_to_rgb(color)
+    return _rgb_to_hex(r + (255 - r) * amount, g + (255 - g) * amount, b + (255 - b) * amount)
+
+
+def _hex_darken(color: str, amount: float) -> str:
+    r, g, b = _hex_to_rgb(color)
+    return _rgb_to_hex(r * (1.0 - amount), g * (1.0 - amount), b * (1.0 - amount))
+
+
+def _clay_grad_id(color: str) -> str:
+    return "cg-clay-grad-" + color.lstrip("#").lower()
+
+
+def _clay_defs_block(chart_spec: dict[str, Any]) -> str:
+    if not _clay_mode_active(chart_spec):
+        return ""
+    colors: list[str] = []
+    seen: set[str] = set()
+    candidates = [
+        _theme_token(chart_spec, "accent", "#8b5a9f"),
+        _theme_token(chart_spec, "accent_alt", "#d47a8e"),
+        _theme_token(chart_spec, "annotation_stroke", "#b85a7a"),
+        _theme_token(chart_spec, "positive", "#6fa877"),
+        _theme_token(chart_spec, "negative", "#d16a6a"),
+        _theme_token(chart_spec, "neutral", "#a89a92"),
+        _theme_token(chart_spec, "track", "#a4d4b8"),
+    ]
+    candidates.extend(_share_palette(chart_spec))
+    for raw in candidates:
+        color = str(raw or "")
+        if not _HEX_COLOR_RE.match(color):
+            continue
+        key = color.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        colors.append(color)
+
+    gradients: list[str] = []
+    for color in colors:
+        gid = _clay_grad_id(color)
+        light = _hex_lighten(color, 0.32)
+        dark = _hex_darken(color, 0.22)
+        gradients.append(
+            f'<radialGradient id="{gid}" cx="30%" cy="22%" r="95%" fx="25%" fy="18%">'
+            f'<stop offset="0%" stop-color="{light}" />'
+            f'<stop offset="55%" stop-color="{color}" />'
+            f'<stop offset="100%" stop-color="{dark}" />'
+            f'</radialGradient>'
+        )
+
+    drop_shadow = (
+        '<filter id="cg-clay-shadow" x="-25%" y="-25%" width="150%" height="150%">'
+        '<feGaussianBlur in="SourceAlpha" stdDeviation="5" />'
+        '<feOffset dx="0" dy="6" />'
+        '<feComponentTransfer><feFuncA type="linear" slope="0.32" /></feComponentTransfer>'
+        '<feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>'
+        '</filter>'
+    )
+    soft_shadow = (
+        '<filter id="cg-clay-soft" x="-15%" y="-15%" width="130%" height="130%">'
+        '<feGaussianBlur in="SourceAlpha" stdDeviation="2.5" />'
+        '<feOffset dx="0" dy="3" />'
+        '<feComponentTransfer><feFuncA type="linear" slope="0.38" /></feComponentTransfer>'
+        '<feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>'
+        '</filter>'
+    )
+    highlight_sheen = (
+        '<linearGradient id="cg-clay-sheen" x1="0%" y1="0%" x2="0%" y2="100%">'
+        '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.55" />'
+        '<stop offset="45%" stop-color="#ffffff" stop-opacity="0.0" />'
+        '</linearGradient>'
+    )
+    return "<defs>" + drop_shadow + soft_shadow + highlight_sheen + "".join(gradients) + "</defs>"
+
+
+def _clay_fill(chart_spec: dict[str, Any], color: Any) -> str:
+    if not _clay_mode_active(chart_spec):
+        return str(color)
+    text = str(color or "")
+    if _HEX_COLOR_RE.match(text):
+        return f"url(#{_clay_grad_id(text)})"
+    return text
+
+
+def _clay_filter_attr(chart_spec: dict[str, Any], *, soft: bool = False) -> str:
+    if not _clay_mode_active(chart_spec):
+        return ""
+    return ' filter="url(#cg-clay-soft)"' if soft else ' filter="url(#cg-clay-shadow)"'
 
 
 def _card_palette(chart_spec: dict[str, Any]) -> list[str]:
